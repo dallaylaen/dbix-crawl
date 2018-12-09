@@ -1,39 +1,50 @@
 package DBIx::Slice;
 
-use 5.006;
-use strict;
-use warnings;
+use 5.008;
+use Moo;
+our $VERSION = '0.01';
 
 =head1 NAME
 
-DBIx::Slice - The great new DBIx::Slice!
+DBIx::Slice - copy database content by references
 
 =head1 VERSION
 
 Version 0.01
 
-=cut
-
-our $VERSION = '0.01';
-
-
 =head1 SYNOPSIS
 
 Quick summary of what the module does.
 
-Perhaps a little code snippet.
-
     use DBIx::Slice;
 
-    my $foo = DBIx::Slice->new();
-    ...
+    my $slice = DBIx::Slice->new();
 
-=head1 EXPORT
+    # recreate DSL
+    $slice->add_table (...);
+    $slice->add_link ( ... );
 
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
+    # fetch data
+    $slice->fetch( $dbh_prod, [ foo => { id => 42 } ], [ bar => { id => 137 } ] );
 
-=head1 SUBROUTINES/METHODS
+    # store data
+    $slice->insert( $dbh_test );
+
+=head1 ATTRIBUTES
+
+=over
+
+=item keys - table to primary key hash
+
+=item links - foreign key hash
+
+=item data - fetched data cache based on primary key
+
+=item seen - fetched data search cache to avoid looping or checking out data twice.
+
+=item override - per-table post-fetch processing, like removing passwords etc.
+
+=back
 
 =cut
 
@@ -50,10 +61,56 @@ has data   => is => "rw", default => sub { {} };
 # table => 'keypair' => 'valuepair'
 has seen => is => "rw", default => sub { {} };
 
-
+# table => sub { ... }
+# TODO rename
 has override => is => "rw", default => sub { {} };
 
 # DDL
+
+=head1 PUBLIC API
+
+As of current, cache, DBI layer, and database structure class are all mixed
+together.
+This may or may not change in the future.
+
+=head2 DDL METHODS
+
+The following methods are used to setup table structure before fetching
+any data.
+
+=head3 add_table
+
+    add_table( table_name => key_field )
+
+Add a table to known table list, add a primary key.
+
+=cut
+
+sub add_table {
+    my ($self, $table, $key) = @_;
+
+    $self->keys->{$table} = ref $key eq 'ARRAY' ? $key : [$key];
+};
+
+=head3 add_link
+
+    add_link( $table, $field, $linked_table, $linked_field
+
+Create a link that suggests that for every item in $table,
+corresponding item(s) in $linked_table must also be fetched.
+
+Note that this doe not directly correspond to a foreign key in SQL.
+For instance, if one has tables C<author> and C<book>,
+
+    add_link( "book", "author_id", "author", "id" )
+
+means that for every book, its author must be fetched, whereas
+
+    add_link( "author", "id", "book", "author_id" )
+
+means that for every author, ALL of their books are fetched. 
+
+=cut
 
 sub add_link {
     my ($self, $table, $fk, $ref, $pk) = @_;
@@ -64,11 +121,13 @@ sub add_link {
     return $self;
 };
 
-sub add_table {
-    my ($self, $table, $key) = @_;
+=head3 add_override
 
-    $self->keys->{$table} = ref $key eq 'ARRAY' ? $key : [$key];
-};
+    add_overrid( table, CODE )
+
+Add a coderef to postprocess fetched items.
+
+=cut
 
 sub add_override {
     my ($self, $table, $code) = @_;
@@ -76,7 +135,21 @@ sub add_override {
     $self->override->{$table} = $code;
 };
 
-# Pure
+=head2 DDL QUERYING
+
+The following functions apply known tables and links to data,
+returning more data.
+They are all pure i.e. only produce output that only depends on parameters.
+
+=head3 make_key 
+
+    maky_key( \%hash )
+
+Returns a pair of stringified values and keys of hash.
+
+Current format is tab-delimited. DO NOT RELY.
+
+=cut
 
 sub make_key {
     my ($self, $data) = @_;
@@ -84,6 +157,14 @@ sub make_key {
     my @keys = sort keys %$data;
     return ( $self->joinf( @keys ), $self->joinf( map { $data->{$_} } @keys ) );
 };
+
+=head3 make_primary_key
+
+    make_primary_key( table, \%hash )
+
+Create a key (stringified in the same way) based on a known table and some values.
+
+=cut
 
 sub make_primary_key {
     my ($self, $table, $data) = @_;
@@ -93,6 +174,12 @@ sub make_primary_key {
     return ( $self->joinf( @$keys ), $self->joinf( map { $data->{$_} } @$keys ) );
 };
 
+=head3 joinf
+
+Stringify arbitrary array.
+
+=cut
+
 # TODO configurable delimiter
 sub joinf {
     my $self = shift;
@@ -100,11 +187,27 @@ sub joinf {
     return join "\t", @_;
 };
 
+=head3 splitf
+
+Inverse of joinf.
+
+=cut
+
 sub splitf {
     my ($self, $row) = @_;
 
     return split /\t/, $row;
 };
+
+=head3 get_linked
+
+    get_linked( $table, \%data )
+
+For every non-null value in hash, display links. The format is
+
+    [ other_table => { key => value } ], ...
+
+=cut
 
 sub get_linked {
     my ($self, $table, $data) = @_;
@@ -122,7 +225,13 @@ sub get_linked {
     return @ret;
 };
 
-# Data
+=head2 CACHE PROCESSING METHODS
+
+=head3 clear
+
+Remove cache.
+
+=cut
 
 sub clear {
     my $self = shift;
@@ -130,6 +239,12 @@ sub clear {
     $self->seen({});
     return $self;
 };
+
+=head3 is_seen( table => \%key )
+
+Check that table was ever queried for \%key
+
+=cut
 
 sub is_seen {
     my ($self, $table, $data) = @_;
@@ -139,6 +254,12 @@ sub is_seen {
     return $self->seen->{$table}{$key}{$value};
 };
 
+=head3 mark_seen( table => \%key )
+
+Mark a query as known. The previous value is returned.
+
+=cut
+
 sub mark_seen {
     my ($self, $table, $data) = @_;
 
@@ -146,6 +267,15 @@ sub mark_seen {
 
     return $self->seen->{$table}{$key}{$value}++;
 };
+
+=head3 add_data
+
+    add_data( $table, \%data )
+
+Add data to table content. If any content with the same primary key exists,
+it is replace.
+
+=cut
 
 sub add_data {
     my ($self, $table, $data) = @_;
@@ -156,30 +286,21 @@ sub add_data {
     return $self;
 };
 
-# DBI
+=head2 DATABASE CONNECTION METHODS
 
-sub fetch_one {
-    my ($self, $dbh, $table, $key) = @_;
+As of current, C<$dbh> needs to be passed around.
+This is wrong and will possibly be replaced with something better in the future.
 
-    my @args;
-    my $sql = "SELECT * FROM `$table` WHERE 1";
-    foreach (keys %$key) {
-        # TODO if defined
-        $sql .= " AND `$_` = ?";
-        push @args, $key->{$_};
-    };
+=head3 fetch
 
-    warn "\tfetch: $sql [@args]";
+Fetch data elements, recursively, and store them in cache.
+Every data point is given as
 
-    my $sth = $dbh->prepare( $sql );
-    $sth->execute(@args);
+    [ table_name => \%search_criteria ]
 
-    my @ret;
-    while (my $row = $sth->fetchrow_hashref) {
-        push @ret, $row;
-    };
-    return @ret;
-};
+Links are followed, with aggressive caching.
+
+=cut
 
 sub fetch {
     my ($self, $dbh, @todo) = @_;
@@ -205,26 +326,40 @@ sub fetch {
     };
 };
 
-sub insert_one {
-    my ($self, $dbh, $table, $data) = @_;
+=head3 fetch_one
 
-    if (my $code = $self->override->{$table} ) {
-        $data = { %$data }; # shallow copy
-        $code->( $data, $table );
+Execute one query and return it, without modifying anything.
+
+=cut
+
+sub fetch_one {
+    my ($self, $dbh, $table, $key) = @_;
+
+    my @args;
+    my $sql = "SELECT * FROM `$table` WHERE 1";
+    foreach (keys %$key) {
+        # TODO if defined
+        $sql .= " AND `$_` = ?";
+        push @args, $key->{$_};
     };
 
-    my @fields = sort grep { defined $data->{$_} } keys %$data;
-    my $fields = join ",", map { "`$_`" } @fields;
-    my $quest  = join ",", map { "?" } @fields;
-    my @args   = map { $data->{$_} } @fields;
-
-    my $sql = "INSERT INTO `$table`($fields) VALUES( $quest )";
-
-    warn "\t$sql [@args]";
+    warn "\tfetch: $sql [@args]";
 
     my $sth = $dbh->prepare( $sql );
-    $sth->execute( @args );
+    $sth->execute(@args);
+
+    my @ret;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @ret, $row;
+    };
+    return @ret;
 };
+
+=head3 insert
+
+Insert ALL cached data into target database as one transaction.
+
+=cut
 
 sub insert {
     my ($self, $dbh) = @_;
@@ -244,6 +379,34 @@ sub insert {
     };
     $dbh->commit;
 
+};
+
+=head3 insert_one
+
+Insert a C<[ table => \%data ]> tuple into a database, without affecting cache
+in any way.
+
+=cut
+
+sub insert_one {
+    my ($self, $dbh, $table, $data) = @_;
+
+    if (my $code = $self->override->{$table} ) {
+        $data = { %$data }; # shallow copy
+        $code->( $data, $table );
+    };
+
+    my @fields = sort grep { defined $data->{$_} } keys %$data;
+    my $fields = join ",", map { "`$_`" } @fields;
+    my $quest  = join ",", map { "?" } @fields;
+    my @args   = map { $data->{$_} } @fields;
+
+    my $sql = "INSERT INTO `$table`($fields) VALUES( $quest )";
+
+    warn "\t$sql [@args]";
+
+    my $sth = $dbh->prepare( $sql );
+    $sth->execute( @args );
 };
 
 =head1 AUTHOR

@@ -13,8 +13,10 @@ BEGIN {
         spelling => {
             allow_words => [qw[
                 Konstantin Uvarin
-                github metacpan annocpan CPAN RT
-                TBD
+                stringify stringified 
+                github metacpan annocpan CPAN RT perldoc
+                TBD API DDL DBI
+                joinf splitf
             ]],
         }
     );
