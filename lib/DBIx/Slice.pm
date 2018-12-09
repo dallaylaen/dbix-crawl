@@ -35,19 +35,216 @@ if you don't export anything, such as for a purely object-oriented module.
 
 =head1 SUBROUTINES/METHODS
 
-=head2 function1
-
 =cut
 
-sub function1 {
-}
+use Moo;
 
-=head2 function2
+has keys   => is => "rw", default => sub { {} };
 
-=cut
+# table => field => [ table : field, ... ]
+has links  => is => "rw", default => sub { {} };
 
-sub function2 {
-}
+# table => [ {record}, ... ]
+has data   => is => "rw", default => sub { {} };
+
+# table => 'keypair' => 'valuepair'
+has seen => is => "rw", default => sub { {} };
+
+
+has override => is => "rw", default => sub { {} };
+
+# DDL
+
+sub add_link {
+    my ($self, $table, $fk, $ref, $pk) = @_;
+
+    $pk ||= $self->keys->{$ref}[0];
+
+    $self->links->{$table}{$fk}{$ref.'.'.$pk}++;
+    return $self;
+};
+
+sub add_table {
+    my ($self, $table, $key) = @_;
+
+    $self->keys->{$table} = ref $key eq 'ARRAY' ? $key : [$key];
+};
+
+sub add_override {
+    my ($self, $table, $code) = @_;
+
+    $self->override->{$table} = $code;
+};
+
+# Pure
+
+sub make_key {
+    my ($self, $data) = @_;
+
+    my @keys = sort keys %$data;
+    return ( $self->joinf( @keys ), $self->joinf( map { $data->{$_} } @keys ) );
+};
+
+sub make_primary_key {
+    my ($self, $table, $data) = @_;
+
+    my $keys = $self->keys->{$table};
+
+    return ( $self->joinf( @$keys ), $self->joinf( map { $data->{$_} } @$keys ) );
+};
+
+# TODO configurable delimiter
+sub joinf {
+    my $self = shift;
+
+    return join "\t", @_;
+};
+
+sub splitf {
+    my ($self, $row) = @_;
+
+    return split /\t/, $row;
+};
+
+sub get_linked {
+    my ($self, $table, $data) = @_;
+
+    my @ret;
+    my $links = $self->links->{$table};
+    foreach my $field (sort keys %$links) {
+        next unless defined $data->{$field};
+        foreach my $pair (sort keys %{ $links->{$field} } ) {
+            my ($ref, $fk) = split /\./, $pair, 2;
+            push @ret, [ $ref => { $fk => $data->{$field} } ];
+        };
+    };
+
+    return @ret;
+};
+
+# Data
+
+sub clear {
+    my $self = shift;
+    $self->data({});
+    $self->seen({});
+    return $self;
+};
+
+sub is_seen {
+    my ($self, $table, $data) = @_;
+
+    my ($key, $value) = $self->make_key( $data );
+
+    return $self->seen->{$table}{$key}{$value};
+};
+
+sub mark_seen {
+    my ($self, $table, $data) = @_;
+
+    my ($key, $value) = $self->make_key( $data );
+
+    return $self->seen->{$table}{$key}{$value}++;
+};
+
+sub add_data {
+    my ($self, $table, $data) = @_;
+
+    my (undef, $key) = $self->make_primary_key( $table, $data );
+
+    $self->data->{$table}{$key} = $data;
+    return $self;
+};
+
+# DBI
+
+sub fetch_one {
+    my ($self, $dbh, $table, $key) = @_;
+
+    my @args;
+    my $sql = "SELECT * FROM `$table` WHERE 1";
+    foreach (keys %$key) {
+        # TODO if defined
+        $sql .= " AND `$_` = ?";
+        push @args, $key->{$_};
+    };
+
+    warn "\tfetch: $sql [@args]";
+
+    my $sth = $dbh->prepare( $sql );
+    $sth->execute(@args);
+
+    my @ret;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @ret, $row;
+    };
+    return @ret;
+};
+
+sub fetch {
+    my ($self, $dbh, @todo) = @_;
+
+    while (@todo) {
+        my $req = shift @todo;
+        my ($table, $key) = @$req;
+
+        my $seen = $self->mark_seen( $table, $key );
+        my @req = $self->make_key( $key );
+
+        warn "\tfetching from $table where ($req[0]) = ($req[1]), seen=$seen";
+        next if $seen;
+
+        my @data = $self->fetch_one( $dbh, $table, $key );
+
+        warn "\tGot items: ", scalar @data;
+
+        foreach (@data) {
+            $self->add_data($table => $_);
+            push @todo, $self->get_linked( $table => $_ );
+        };
+    };
+};
+
+sub insert_one {
+    my ($self, $dbh, $table, $data) = @_;
+
+    if (my $code = $self->override->{$table} ) {
+        $data = { %$data }; # shallow copy
+        $code->( $data, $table );
+    };
+
+    my @fields = sort grep { defined $data->{$_} } keys %$data;
+    my $fields = join ",", map { "`$_`" } @fields;
+    my $quest  = join ",", map { "?" } @fields;
+    my @args   = map { $data->{$_} } @fields;
+
+    my $sql = "INSERT INTO `$table`($fields) VALUES( $quest )";
+
+    warn "\t$sql [@args]";
+
+    my $sth = $dbh->prepare( $sql );
+    $sth->execute( @args );
+};
+
+sub insert {
+    my ($self, $dbh) = @_;
+
+    my $data = $self->data;
+
+    my @todo;
+    foreach my $table( keys %$data ) {
+        foreach my $item ( values %{$data->{$table}} ) {
+            push @todo, [ $table, $item ];
+        };
+    };
+
+    $dbh->begin_work;
+    foreach (@todo) {
+        $self->insert_one( $dbh, @$_ );
+    };
+    $dbh->commit;
+
+};
 
 =head1 AUTHOR
 
@@ -58,8 +255,6 @@ Konstantin S. Uvarin, C<< <khedin at gmail.com> >>
 Please report any bugs or feature requests to C<bug-dbix-slice at rt.cpan.org>, or through
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=DBIx-Slice>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
-
-
 
 
 =head1 SUPPORT
@@ -134,7 +329,6 @@ YOUR LOCAL LAW. UNLESS REQUIRED BY LAW, NO COPYRIGHT HOLDER OR
 CONTRIBUTOR WILL BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, OR
 CONSEQUENTIAL DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THE PACKAGE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 
 =cut
 
