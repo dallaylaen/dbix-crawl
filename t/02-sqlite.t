@@ -5,6 +5,8 @@ use warnings;
 use Test::More;
 use DBI;
 use DBD::SQLite;
+use Log::Any::Test;
+use Log::Any qw($log);
 
 use DBIx::Slice;
 

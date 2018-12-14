@@ -42,13 +42,13 @@ Quick summary of what the module does.
 
 =item seen - fetched data search cache to avoid looping or checking out data twice.
 
-=item override - per-table post-fetch processing, like removing passwords etc.
+=item post_fetch_hooks - per-table post-fetch processing, like removing passwords etc.
 
 =back
 
 =cut
 
-use Moo;
+use Log::Any qw($log);
 
 has keys   => is => "rw", default => sub { {} };
 
@@ -63,7 +63,7 @@ has seen => is => "rw", default => sub { {} };
 
 # table => sub { ... }
 # TODO rename
-has override => is => "rw", default => sub { {} };
+has post_fetch_hooks => is => "rw", default => sub { {} };
 
 # DDL
 
@@ -108,7 +108,7 @@ means that for every book, its author must be fetched, whereas
 
     add_link( "author", "id", "book", "author_id" )
 
-means that for every author, ALL of their books are fetched. 
+means that for every author, ALL of their books are fetched.
 
 =cut
 
@@ -121,18 +121,28 @@ sub add_link {
     return $self;
 };
 
-=head3 add_override
+=head3 add_post_fetch
 
-    add_overrid( table, CODE )
+    add_post_fetch( my_table => \&_adjust )
+
+    sub _adjust {
+        my $data = shift;
+        $data->{password} = "*******";
+        ...
+    };
 
 Add a coderef to postprocess fetched items.
 
+The item is given as a hashref.
+CODE must act on that hashref directly.
+Return value is ignored.
+
 =cut
 
-sub add_override {
+sub add_post_fetch {
     my ($self, $table, $code) = @_;
 
-    $self->override->{$table} = $code;
+    $self->post_fetch_hooks->{$table} = $code;
 };
 
 =head2 DDL QUERYING
@@ -141,7 +151,7 @@ The following functions apply known tables and links to data,
 returning more data.
 They are all pure i.e. only produce output that only depends on parameters.
 
-=head3 make_key 
+=head3 make_key
 
     maky_key( \%hash )
 
@@ -312,12 +322,12 @@ sub fetch {
         my $seen = $self->mark_seen( $table, $key );
         my @req = $self->make_key( $key );
 
-        warn "\tfetching from $table where ($req[0]) = ($req[1]), seen=$seen";
+        $log->info( "\tfetching from $table where ($req[0]) = ($req[1]), seen=$seen" );
         next if $seen;
 
         my @data = $self->fetch_one( $dbh, $table, $key );
 
-        warn "\tGot items: ", scalar @data;
+        $log->info("\tGot items: ", scalar @data);
 
         foreach (@data) {
             $self->add_data($table => $_);
@@ -343,15 +353,18 @@ sub fetch_one {
         push @args, $key->{$_};
     };
 
-    warn "\tfetch: $sql [@args]";
+    $log->info( "\tfetch: $sql [@args]" );
 
     my $sth = $dbh->prepare( $sql );
     $sth->execute(@args);
 
     my @ret;
+    my $hook = $self->post_fetch_hooks->{$table};
     while (my $row = $sth->fetchrow_hashref) {
+        $hook->($row) if $hook;
         push @ret, $row;
     };
+
     return @ret;
 };
 
@@ -391,11 +404,6 @@ in any way.
 sub insert_one {
     my ($self, $dbh, $table, $data) = @_;
 
-    if (my $code = $self->override->{$table} ) {
-        $data = { %$data }; # shallow copy
-        $code->( $data, $table );
-    };
-
     my @fields = sort grep { defined $data->{$_} } keys %$data;
     my $fields = join ",", map { "`$_`" } @fields;
     my $quest  = join ",", map { "?" } @fields;
@@ -403,7 +411,7 @@ sub insert_one {
 
     my $sql = "INSERT INTO `$table`($fields) VALUES( $quest )";
 
-    warn "\t$sql [@args]";
+    $log->info("\t$sql [@args]");
 
     my $sth = $dbh->prepare( $sql );
     $sth->execute( @args );
