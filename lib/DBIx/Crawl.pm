@@ -45,6 +45,9 @@ Quick summary of what the module does.
 
 =item post_fetch_hooks - per-table post-fetch processing, like removing passwords etc.
 
+=item unsafe - allow unsafe operations, like execution of user-supplied code
+(default: off)
+
 =back
 
 =cut
@@ -52,6 +55,9 @@ Quick summary of what the module does.
 use Carp;
 use Log::Any qw($log);
 use Moo;
+
+# Allow execution of client code
+has unsafe => is => "rw", default => sub { 0 };
 
 # table => [ field, ... ]
 has keys   => is => "rw", default => sub { {} };
@@ -181,6 +187,19 @@ my %command_spec = (
             return @out;
         },
     },
+    post_fetch => {
+        method => 'add_post_fetch',
+        min    => 1,
+        max    => 1,
+        slurp  => 1,
+        unsafe => 1,
+        args   => sub {
+            my $coderef = eval "sub { $_[1] }"; ## no critic
+            croak "Compilation of user supplied code failed"
+                unless $coderef;
+            return ($_[0], $coderef);
+        },
+    },
 );
 sub read_config {
     my ($self, $fd, $fname) = @_;
@@ -214,6 +233,12 @@ sub read_config {
         croak "wrong number of arguments for $command"
             unless @args >= $spec->{min} || 0 and @args <= ($spec->{max} || 9**9**9);
 
+        croak "command '$command' is unsafe, but unsafe mode not turned on"
+            if $spec->{unsafe} and not $self->unsafe;
+
+        push @args, _slurp($fd, '__END__')
+            if $spec->{slurp};
+
         @args = $spec->{args}->(@args)
             if $spec->{args};
 
@@ -228,6 +253,18 @@ sub read_config {
 
     # all folks
     return $self;
+};
+
+sub _slurp {
+    my ($fd, $eof) = @_;
+
+    my @parts;
+    while (<$fd>) {
+        /^\s*\Q$eof\E\s*$/ and return join '', @parts;
+        push @parts, $_;
+    };
+
+    croak "failed to find a '$eof' until end of file";
 };
 
 =head2 DDL QUERYING

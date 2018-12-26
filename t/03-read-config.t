@@ -60,6 +60,30 @@ is_deeply_diff $slice->keys,
 
 note explain $slice->links;
 
+throws_ok {
+    $slice->read_config (make_fd(<<'CONF'));
+        post_fetch customer
+            my $data = shift;
+            $data->{foobar} = 'hey';
+        __END__
+CONF
+} qr/unsafe/, "unsafe command prohibited";
+
+$slice->unsafe(1);
+
+lives_ok {
+    $slice->read_config (make_fd(<<'CONF'));
+        post_fetch customer
+            my $data = shift;
+            $data->{foobar} = 'hey';
+        __END__
+CONF
+};
+
+is ref $slice->post_fetch_hooks->{customer}, 'CODE', "A sub was inserted";
+
+note explain $slice->post_fetch_hooks;
+
 done_testing;
 
 sub make_fd {
