@@ -11,7 +11,7 @@ my $slice = DBIx::Slice->new;
 
 $slice->add_table( book => 'id' );
 $slice->add_table( author => 'id' );
-$slice->add_table( critique => ["author_id", "book_id"] );
+$slice->add_table( critique => "author_id", "book_id" );
 
 $slice->add_link( book => author_id => 'author' );
 

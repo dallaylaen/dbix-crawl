@@ -76,7 +76,7 @@ my $slice = DBIx::Slice->new;
 foreach ( qw(good manager customer receipt )) {
     $slice->add_table( $_ => 'id' );
 };
-$slice->add_table( receipt_good => [ 'receipt_id', 'position' ] );
+$slice->add_table( receipt_good => 'receipt_id', 'position' );
 
 $slice->add_link( qw( manager id receipt manager_id ) );
 $slice->add_link( qw( receipt manager_id manager id ) );

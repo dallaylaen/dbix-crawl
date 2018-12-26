@@ -1,7 +1,8 @@
 package DBIx::Slice;
 
 use 5.008;
-use Moo;
+use strict;
+use warnings;
 our $VERSION = '0.01';
 
 =head1 NAME
@@ -48,8 +49,11 @@ Quick summary of what the module does.
 
 =cut
 
+use Carp;
 use Log::Any qw($log);
+use Moo;
 
+# table => [ field, ... ]
 has keys   => is => "rw", default => sub { {} };
 
 # table => field => [ table : field, ... ]
@@ -87,9 +91,9 @@ Add a table to known table list, add a primary key.
 =cut
 
 sub add_table {
-    my ($self, $table, $key) = @_;
+    my ($self, $table, @key) = @_;
 
-    $self->keys->{$table} = ref $key eq 'ARRAY' ? $key : [$key];
+    $self->keys->{$table} = \@key;
 };
 
 =head3 add_link
@@ -143,6 +147,57 @@ sub add_post_fetch {
     my ($self, $table, $code) = @_;
 
     $self->post_fetch_hooks->{$table} = $code;
+};
+
+=head3 read_config( $file_handle )
+
+Read configuration file. Docs TBD.
+
+=cut
+
+# method, #minargs, #maxargs, ???
+my %command_spec = (
+    table => [ "add_table", 2, 100 ],
+    link  => [ "add_link", 3, 4 ],
+);
+sub read_config {
+    my ($self, $fd) = @_;
+
+    my @todo;
+    while (<$fd>) {
+        # comment
+        /\S/ or next;
+        /^\s*#/ and next;
+
+        /^\s*(\w+)\s+(\w+?(?:\s+\w+)*)?(?:\s+(\{.*\}))?\s*$/
+            or croak "Bad line format: $_";
+
+        my ($command, $allargs, $opt) = ($1, $2, $3);
+        my @args = split /\s+/, $allargs;
+
+        # TODO decode opt
+        croak "options not available for $command"
+            if $opt;
+
+        my $spec = $command_spec{$command};
+
+        croak "unknown command $command"
+            unless $spec;
+
+        croak "wrong number of arguments for $command"
+            unless @args >= $spec->[1] and @args <= ($spec->[2] || 9**9);
+
+        push @todo, [ $spec->[0], @args ];
+    };
+
+    # ok, the file was read...
+    foreach my $cmd (@todo) {
+        my ($method, @rest) = @$cmd;
+        $self->$method( @rest );
+    };
+
+    # all folks
+    return $self;
 };
 
 =head2 DDL QUERYING
@@ -294,6 +349,37 @@ sub add_data {
 
     $self->data->{$table}{$key} = $data;
     return $self;
+};
+
+=head3 get_insert_script
+
+Create a would-be insert transaction in plain SQL,
+without applying it anywhere.
+
+=cut
+
+sub get_insert_script {
+    my ($self, %opt) = @_;
+
+    # TODO %opt unused
+
+    my $all = $self->data;
+
+    my @work;
+
+    push @work, "BEGIN WORK;";
+    foreach my $table( keys %$all ) {
+        my $entries = $all->{$table};
+        foreach my $item (values %$entries) {
+            my @keys = sort keys %$item;
+            my @esc_keys = map { "`$_`" } @keys;
+            my @values = map { my $x = $_; $x =~ s/'/''/g; "'$x'" } @$item{@keys};
+            push @work, sprintf "INSERT INTO `%s`(%s) VALUES (%s);",
+                $table, (join ", ", @esc_keys), (join ", ", @values);
+        };
+    };
+    push @work, "COMMIT;";
+    return join $\, @work, '';
 };
 
 =head2 DATABASE CONNECTION METHODS
