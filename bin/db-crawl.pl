@@ -34,7 +34,7 @@ foreach (@ARGV) {
 
 # read config
 my $fd = openfile( $opt{config} );
-my $slice = DBIx::Crawl->new;
+my $slice = DBIx::Crawl->new( unsafe => 1 );
 $slice->read_config($fd);
 
 # connect to DB
