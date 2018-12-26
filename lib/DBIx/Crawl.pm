@@ -1,4 +1,4 @@
-package DBIx::Slice;
+package DBIx::Crawl;
 
 use 5.008;
 use strict;
@@ -7,7 +7,7 @@ our $VERSION = '0.01';
 
 =head1 NAME
 
-DBIx::Slice - copy database content by references
+DBIx::Crawl - copy database content by references
 
 =head1 VERSION
 
@@ -17,9 +17,9 @@ Version 0.01
 
 Quick summary of what the module does.
 
-    use DBIx::Slice;
+    use DBIx::Crawl;
 
-    my $slice = DBIx::Slice->new();
+    my $slice = DBIx::Crawl->new();
 
     # recreate DSL
     $slice->add_table (...);
@@ -515,7 +515,7 @@ Konstantin S. Uvarin, C<< <khedin at gmail.com> >>
 =head1 BUGS
 
 Please report any bugs or feature requests to C<bug-dbix-slice at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=DBIx-Slice>.  I will be notified, and then you'll
+the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=DBIx-Crawl>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
 
 
@@ -523,7 +523,7 @@ automatically be notified of progress on your bug as I make changes.
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc DBIx::Slice
+    perldoc DBIx::Crawl
 
 
 You can also look for information at:
@@ -532,19 +532,19 @@ You can also look for information at:
 
 =item * RT: CPAN's request tracker (report bugs here)
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=DBIx-Slice>
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=DBIx-Crawl>
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
-L<http://annocpan.org/dist/DBIx-Slice>
+L<http://annocpan.org/dist/DBIx-Crawl>
 
 =item * CPAN Ratings
 
-L<http://cpanratings.perl.org/d/DBIx-Slice>
+L<http://cpanratings.perl.org/d/DBIx-Crawl>
 
 =item * Search CPAN
 
-L<http://search.cpan.org/dist/DBIx-Slice/>
+L<http://search.cpan.org/dist/DBIx-Crawl/>
 
 =back
 
@@ -594,4 +594,4 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 =cut
 
-1; # End of DBIx::Slice
+1; # End of DBIx::Crawl

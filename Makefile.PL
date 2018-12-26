@@ -4,10 +4,10 @@ use warnings;
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-    NAME             => 'DBIx::Slice',
+    NAME             => 'DBIx::Crawl',
     AUTHOR           => q{Konstantin S. Uvarin <khedin@gmail.com>},
-    VERSION_FROM     => 'lib/DBIx/Slice.pm',
-    ABSTRACT_FROM    => 'lib/DBIx/Slice.pm',
+    VERSION_FROM     => 'lib/DBIx/Crawl.pm',
+    ABSTRACT_FROM    => 'lib/DBIx/Crawl.pm',
     LICENSE          => 'artistic_2',
     PL_FILES         => {},
     MIN_PERL_VERSION => '5.006',
@@ -24,5 +24,5 @@ WriteMakefile(
         'Log::Any' => 0,
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
-    clean => { FILES => 'DBIx-Slice-*' },
+    clean => { FILES => 'DBIx-Crawl-*' },
 );

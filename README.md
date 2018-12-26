@@ -1,4 +1,4 @@
-DBIx-Slice
+DBIx-Crawl
 
 The README is used to introduce the module and provide instructions on
 how to install the module, any machine dependencies it may have (for
@@ -26,21 +26,21 @@ SUPPORT AND DOCUMENTATION
 After installing, you can find documentation for this module with the
 perldoc command.
 
-    perldoc DBIx::Slice
+    perldoc DBIx::Crawl
 
 You can also look for information at:
 
     RT, CPAN's request tracker (report bugs here)
-        http://rt.cpan.org/NoAuth/Bugs.html?Dist=DBIx-Slice
+        http://rt.cpan.org/NoAuth/Bugs.html?Dist=DBIx-Crawl
 
     AnnoCPAN, Annotated CPAN documentation
-        http://annocpan.org/dist/DBIx-Slice
+        http://annocpan.org/dist/DBIx-Crawl
 
     CPAN Ratings
-        http://cpanratings.perl.org/d/DBIx-Slice
+        http://cpanratings.perl.org/d/DBIx-Crawl
 
     Search CPAN
-        http://search.cpan.org/dist/DBIx-Slice/
+        http://search.cpan.org/dist/DBIx-Crawl/
 
 
 LICENSE AND COPYRIGHT

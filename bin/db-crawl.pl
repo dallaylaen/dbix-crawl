@@ -7,7 +7,7 @@ use Getopt::Long;
 use File::Basename qw(dirname);
 
 use lib dirname(__FILE__)."/../lib";
-use DBIx::Slice;
+use DBIx::Crawl;
 
 my %opt;
 GetOptions (
@@ -34,7 +34,7 @@ foreach (@ARGV) {
 
 # read config
 my $fd = openfile( $opt{config} );
-my $slice = DBIx::Slice->new;
+my $slice = DBIx::Crawl->new;
 $slice->read_config($fd);
 
 # connect to DB

@@ -4,9 +4,9 @@ use strict;
 use warnings;
 use Test::More;
 
-use DBIx::Slice;
+use DBIx::Crawl;
 
-my $slice = DBIx::Slice->new;
+my $slice = DBIx::Crawl->new;
 
 
 $slice->add_table( book => 'id' );

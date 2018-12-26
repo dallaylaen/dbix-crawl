@@ -5,9 +5,9 @@ use warnings;
 use Test::More;
 use Test::Exception;
 
-use DBIx::Slice;
+use DBIx::Crawl;
 
-my $slice = DBIx::Slice->new;
+my $slice = DBIx::Crawl->new;
 
 lives_ok {
     my $fd = make_fd( "foo\nbar\n" );

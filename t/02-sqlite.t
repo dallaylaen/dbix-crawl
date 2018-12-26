@@ -8,7 +8,7 @@ use DBD::SQLite;
 use Log::Any::Test;
 use Log::Any qw($log);
 
-use DBIx::Slice;
+use DBIx::Crawl;
 
 my $ddl = <<"SQL";
     CREATE TABLE good(
@@ -71,7 +71,7 @@ foreach (split /;\n/s, $insert) {
     $dbh_in->do($_);
 };
 
-my $slice = DBIx::Slice->new;
+my $slice = DBIx::Crawl->new;
 
 foreach ( qw(good manager customer receipt )) {
     $slice->add_table( $_ => 'id' );
