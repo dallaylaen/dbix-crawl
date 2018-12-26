@@ -160,21 +160,43 @@ Read configuration file. Docs TBD.
 
 =cut
 
-# method, #minargs, #maxargs, ???
 my %command_spec = (
-    table => [ "add_table", 2, 100 ],
-    link  => [ "add_link", 3, 4 ],
+    table => {
+        method => "add_table",
+        min    => 2,
+    },
+    link  => {
+        method => "add_link",
+        min    => 2,
+        max    => 2,
+        args   => sub {
+            my ($from, $to) = @_;
+            my @out;
+            $from =~ /^(\w+)\.(\w+)$/
+                or croak ("First argument must be table.field for command 'link'");
+            push @out, $1, $2;
+            $to   =~ /^(\w+)(?:\.(\w+))?$/
+                or croak ("Second argument must be table.field or just table for command 'link'");
+            push @out, $1, $2?$2:();
+            return @out;
+        },
+    },
 );
 sub read_config {
-    my ($self, $fd) = @_;
+    my ($self, $fd, $fname) = @_;
+
+    $fname ||= '<INPUT>';
+    my $line;
 
     my @todo;
+
     while (<$fd>) {
+        $line++;
         # comment
         /\S/ or next;
         /^\s*#/ and next;
 
-        /^\s*(\w+)\s+(\w+?(?:\s+\w+)*)?(?:\s+(\{.*\}))?\s*$/
+        /^\s*(\w+)\s+(.*?)(?:\s+(\{.*\}))?\s*$/
             or croak "Bad line format: $_";
 
         my ($command, $allargs, $opt) = ($1, $2, $3);
@@ -190,14 +212,17 @@ sub read_config {
             unless $spec;
 
         croak "wrong number of arguments for $command"
-            unless @args >= $spec->[1] and @args <= ($spec->[2] || 9**9);
+            unless @args >= $spec->{min} || 0 and @args <= ($spec->{max} || 9**9**9);
 
-        push @todo, [ $spec->[0], @args ];
+        @args = $spec->{args}->(@args)
+            if $spec->{args};
+
+        push @todo, [ $line, $spec->{method}, @args ];
     };
 
     # ok, the file was read...
     foreach my $cmd (@todo) {
-        my ($method, @rest) = @$cmd;
+        my ($line, $method, @rest) = @$cmd;
         $self->$method( @rest );
     };
 

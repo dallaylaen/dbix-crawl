@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use Test::More;
+use Assert::Refute::T::Basic qw(is_deeply_diff);
 use Test::Exception;
 
 use DBIx::Crawl;
@@ -47,13 +48,14 @@ table customer id
 table manager id
 table relation customer_id manager_id
 
-link customer id relation customer_id
-link relation manager_id manager id
+link customer.id relation.customer_id
+link relation.manager_id manager
 CONF
 } "normal config";
 
-is_deeply $slice->keys,
+is_deeply_diff $slice->keys,
     { customer => [ "id" ], manager => [ "id" ], relation => [ "customer_id", "manager_id" ] },
+    10,
     "keys imported correctly";
 
 note explain $slice->links;
