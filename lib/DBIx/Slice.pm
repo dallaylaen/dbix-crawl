@@ -379,7 +379,7 @@ sub get_insert_script {
         };
     };
     push @work, "COMMIT;";
-    return join $\, @work, '';
+    return join "\n", @work, '';
 };
 
 =head2 DATABASE CONNECTION METHODS
