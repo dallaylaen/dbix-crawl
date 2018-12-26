@@ -119,6 +119,11 @@ means that for every author, ALL of their books are fetched.
 sub add_link {
     my ($self, $table, $fk, $ref, $pk) = @_;
 
+    croak "Cannot add link from unknown table '$table'"
+        unless $self->keys->{$table};
+    croak "Cannot add link to unknown table '$ref'"
+        unless $self->keys->{$ref};
+
     $pk ||= $self->keys->{$ref}[0];
 
     $self->links->{$table}{$fk}{$ref.'.'.$pk}++;
