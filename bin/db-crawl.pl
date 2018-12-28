@@ -20,11 +20,7 @@ GetOptions (
 
 die "--config is required"
     unless defined $opt{config};
-die "--db is required"
-    unless defined $opt{db};
 
-$opt{db} = "SQLite:dbname=$opt{db}"
-    if $opt{db} !~ /:/;
 
 # parse args
 my @todo;
@@ -37,7 +33,20 @@ my $fd = openfile( $opt{config} );
 my $slice = DBIx::Crawl->new( unsafe => 1 );
 $slice->read_config($fd);
 
+if (!@todo) {
+    # Still SQL-compatible output
+    print " -- nothing to be done\n";
+    print " -- config file $opt{config} is OK\n";
+    exit 0;
+};
+
+die "--db is required"
+    if !defined $opt{db} and @ARGV;
+
 # connect to DB
+# SQLite simplifies testing
+$opt{db} = "SQLite:dbname=$opt{db}"
+    if $opt{db} !~ /:/;
 my $dbh = DBI->connect( "dbi:$opt{db}", $opt{user}, $opt{pass}, { RaiseError => 1 } );
 
 # fetch!
