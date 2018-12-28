@@ -10,13 +10,17 @@ use lib dirname(__FILE__)."/../lib";
 use DBIx::Crawl;
 
 my %opt;
-GetOptions (
-    "config=s" => \$opt{config},
-    "db=s"     => \$opt{db},
-    "user=s"   => \$opt{user},
-    "pass=s"   => \$opt{pass}, # TODO read online
-    "help"     => \&usage,
-) or die "Bad usage";
+get_options_help (
+    "$0 - dump partial database content based on links",
+    "Usage: $0 [options] [table:field=value,...] ...",
+    "Options may include",
+    [ "config=s" => \$opt{config}, "(required) - list of known tables & links" ],
+    [ "db=s"     => \$opt{db}, "- database to work on"],
+    "        database is given as 'mysql:host=...;port=...'",
+    "        if filename is given instead, assume SQLite",
+    [ "user=s"   => \$opt{user}, "- database user" ],
+    [ "pass=s"   => \$opt{pass}, "- database password" ], # TODO read online
+);
 
 die "--config is required"
     unless defined $opt{config};
@@ -83,4 +87,50 @@ sub openfile {
         or die "Cannot open file($mode) '$name': $!";
 
     return $fd;
+};
+
+# TODO fix, replace, or finnd equivalent for Getopt::Helpful
+# which does exactly the following but is unmaintained:
+
+my @help;
+sub get_options_help {
+    my @list = @_;
+
+    my @opt;
+
+    foreach (@list) {
+        $_ = [ $_ ] unless ref $_ eq 'ARRAY';
+        push @help, $_;
+
+        if (ref $_->[1]) {
+            # found option
+            push @opt, $_->[0], $_->[1];
+        };
+    };
+
+    GetOptions( help => \&display_usage, @opt )
+        or die "Bad options. See $0 --help";
+};
+
+sub display_usage {
+    my $status = shift;
+    $status = 0 if defined $status and $status !~ /^\d+/;
+
+    my @help_clear;
+
+    foreach (@help) {
+        if (ref $_->[1]) {
+            my ($opt, $skip, @rest) = @$_;
+            push @help_clear, join " ", option_to_help($opt), @rest;
+        } else {
+            push @help_clear, join " ", @$_;
+        };
+    };
+
+    print join "\n", @help_clear, "  --help - this message", "";
+    exit $status if defined $status;
+};
+
+sub option_to_help {
+    return "  --".shift; # TODO
 };
