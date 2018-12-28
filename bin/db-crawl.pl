@@ -57,13 +57,15 @@ sub arg_to_table {
     # table:field="value",...
     my ($arg) = @_;
 
-    $arg =~ /^(\w+):((\w+=\w+)(,\w+=\w+)*)$/
+    $arg =~ /^(\w+):((\w+=\w+)(,\w+=\w+)*|all)$/
         or die "Bad argument $arg, must be 'table:field=value,...'";
 
     my $table = $1;
     my $spec  = $2;
     # TODO detect duplicates & die
-    my %hash = map { split /=/, $_, 2 } split /,/, $spec;
+    my %hash;
+    %hash = map { split /=/, $_, 2 } split /,/, $spec
+        unless $spec eq 'all';
 
     return [ $table, \%hash ];
 };
