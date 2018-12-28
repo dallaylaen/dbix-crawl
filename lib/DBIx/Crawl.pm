@@ -166,6 +166,7 @@ Read configuration file. Docs TBD.
 
 =cut
 
+my $pkg_id;
 my %command_spec = (
     table => {
         method => "add_table",
@@ -176,7 +177,7 @@ my %command_spec = (
         min    => 2,
         max    => 2,
         args   => sub {
-            my ($from, $to) = @_;
+            my ($where, $from, $to) = @_;
             my @out;
             $from =~ /^(\w+)\.(\w+)$/
                 or croak ("First argument must be table.field for command 'link'");
@@ -194,10 +195,20 @@ my %command_spec = (
         slurp  => 1,
         unsafe => 1,
         args   => sub {
-            my $coderef = eval "sub { $_[1] }"; ## no critic
+            my ($where, $table, $code) = @_;
+            my $package = __PACKAGE__."::__ANON__::".++$pkg_id;
+            my ($file, $line) = @$where;
+            my $coderef = eval ## no critic
+            qq{
+                package $package;
+                use strict;
+                use warnings;
+                # line $line $file
+                sub { $code };
+            };
             croak "Compilation of user supplied code failed"
                 unless $coderef;
-            return ($_[0], $coderef);
+            return ($table, $coderef);
         },
     },
 );
@@ -239,7 +250,7 @@ sub read_config {
             push @args, _slurp($fd, '__END__')
                 if $spec->{slurp};
 
-            @args = $spec->{args}->(@args)
+            @args = $spec->{args}->([$fname, $line], @args)
                 if $spec->{args};
 
             push @todo, [ $line, $spec->{method}, @args ];
