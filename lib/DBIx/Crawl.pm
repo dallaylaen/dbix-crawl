@@ -207,48 +207,55 @@ sub read_config {
     $fname ||= '<INPUT>';
     my $line;
 
-    my @todo;
+    eval {
+        my @todo;
+        while (<$fd>) {
+            $line++;
+            # comment
+            /\S/ or next;
+            /^\s*#/ and next;
 
-    while (<$fd>) {
-        $line++;
-        # comment
-        /\S/ or next;
-        /^\s*#/ and next;
+            /^\s*(\w+)\s+(.*?)(?:\s+(\{.*\}))?\s*$/
+                or croak "Bad line format: $_";
 
-        /^\s*(\w+)\s+(.*?)(?:\s+(\{.*\}))?\s*$/
-            or croak "Bad line format: $_";
+            my ($command, $allargs, $opt) = ($1, $2, $3);
+            my @args = split /\s+/, $allargs;
 
-        my ($command, $allargs, $opt) = ($1, $2, $3);
-        my @args = split /\s+/, $allargs;
+            # TODO decode opt
+            croak "options not available for '$command'"
+                if $opt;
 
-        # TODO decode opt
-        croak "options not available for $command"
-            if $opt;
+            my $spec = $command_spec{$command};
 
-        my $spec = $command_spec{$command};
+            croak "unknown command '$command'"
+                unless $spec;
 
-        croak "unknown command $command"
-            unless $spec;
+            croak "wrong number of arguments for '$command'"
+                unless @args >= $spec->{min} || 0 and @args <= ($spec->{max} || 9**9**9);
 
-        croak "wrong number of arguments for $command"
-            unless @args >= $spec->{min} || 0 and @args <= ($spec->{max} || 9**9**9);
+            croak "command '$command' is unsafe, but unsafe mode not turned on"
+                if $spec->{unsafe} and not $self->unsafe;
 
-        croak "command '$command' is unsafe, but unsafe mode not turned on"
-            if $spec->{unsafe} and not $self->unsafe;
+            push @args, _slurp($fd, '__END__')
+                if $spec->{slurp};
 
-        push @args, _slurp($fd, '__END__')
-            if $spec->{slurp};
+            @args = $spec->{args}->(@args)
+                if $spec->{args};
 
-        @args = $spec->{args}->(@args)
-            if $spec->{args};
+            push @todo, [ $line, $spec->{method}, @args ];
+        };
 
-        push @todo, [ $line, $spec->{method}, @args ];
-    };
-
-    # ok, the file was read...
-    foreach my $cmd (@todo) {
-        my ($line, $method, @rest) = @$cmd;
-        $self->$method( @rest );
+        # ok, the file was read...
+        foreach my $cmd (@todo) {
+            ($line, my( $method, @rest )) = @$cmd;
+            $self->$method( @rest );
+        };
+        1;
+    } || do {
+        my $err = $@;
+        $err =~ s/ +at .*? line \d+\.?\n?$//s;
+        $err .= " in $fname line $line\n";
+        die $err;
     };
 
     # all folks

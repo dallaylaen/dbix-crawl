@@ -21,7 +21,7 @@ throws_ok {
     $slice->read_config(make_fd(<<CONF));
 foobar aleph null
 CONF
-} qr/nknown command foobar/, "unknown command = no go";
+} qr/nknown command 'foobar'/, "unknown command = no go";
 
 throws_ok {
     $slice->read_config(make_fd(<<CONF));
@@ -31,9 +31,10 @@ CONF
 
 throws_ok {
     $slice->read_config(make_fd(<<CONF));
+table aleph id
 link aleph 1 2 3 4
 CONF
-} qr/wrong number of/, "arg number check (too many)";
+} qr/wrong number of.*<INPUT> line 2/, "arg number check (too many)";
 
 throws_ok {
     $slice->read_config(make_fd(<<CONF));
