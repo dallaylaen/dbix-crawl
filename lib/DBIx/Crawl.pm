@@ -202,9 +202,8 @@ my %command_spec = (
             qq{
                 package $package;
                 use strict;
-                use warnings;
-                # line $line $file
-                sub { $code };
+                use warnings;\n# line $line $file
+                sub {\n$code };
             };
             croak "Compilation of user supplied code failed"
                 unless $coderef;

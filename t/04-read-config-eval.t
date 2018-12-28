@@ -13,6 +13,7 @@ my $conf = <<'CONF';
     table minimal id
     post_fetch minimal
         my $data = shift;
+        $data->{id} or die "no id found";
         $data->{name} = "Entry #$data->{id}";
     __END__
 CONF
@@ -36,6 +37,11 @@ lives_ok {
     $hook->($data);
 } "hook lives";
 is_deeply $data, { id => 42, name => "Entry #42" }, "hook did what it claims to";
+
+throws_ok {
+    $hook->({});
+} qr/no id found at <INPUT> line 4/, "error attributed correctly";
+note $@;
 
 done_testing;
 
