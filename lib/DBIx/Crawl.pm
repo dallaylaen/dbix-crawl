@@ -136,6 +136,21 @@ sub add_link {
     return $self;
 };
 
+=head3 add_link_both
+
+Adds a bidirectional link.
+
+=cut
+
+sub add_link_both {
+    my ($self, $table, $fk, $ref, $pk) = @_;
+
+    $pk ||= $self->keys->{$ref}[0];
+
+    $self->add_link( $table, $fk, $ref, $pk );
+    $self->add_link( $ref, $pk, $table, $fk );
+};
+
 =head3 add_post_fetch
 
     add_post_fetch( my_table => \&_adjust )
@@ -176,17 +191,13 @@ my %command_spec = (
         method => "add_link",
         min    => 2,
         max    => 2,
-        args   => sub {
-            my ($where, $from, $to) = @_;
-            my @out;
-            $from =~ /^(\w+)\.(\w+)$/
-                or croak ("First argument must be table.field for command 'link'");
-            push @out, $1, $2;
-            $to   =~ /^(\w+)(?:\.(\w+))?$/
-                or croak ("Second argument must be table.field or just table for command 'link'");
-            push @out, $1, $2?$2:();
-            return @out;
-        },
+        args   => \&_args_link,
+    },
+    link2 => {
+        method => "add_link_both",
+        min    => 2,
+        max    => 2,
+        args   => \&_args_link,
     },
     post_fetch => {
         method => 'add_post_fetch',
@@ -270,6 +281,18 @@ sub read_config {
 
     # all folks
     return $self;
+};
+
+sub _args_link {
+    my ($where, $from, $to) = @_;
+    my @out;
+    $from =~ /^(\w+)\.(\w+)$/
+        or croak ("First argument must be table.field for command 'link'");
+    push @out, $1, $2;
+    $to   =~ /^(\w+)(?:\.(\w+))?$/
+        or croak ("Second argument must be table.field or just table for command 'link'");
+    push @out, $1, $2?$2:();
+    return @out;
 };
 
 sub _slurp {
