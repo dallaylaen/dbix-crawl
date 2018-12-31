@@ -1,6 +1,6 @@
 package DBIx::Crawl;
 
-use 5.008;
+use 5.010;
 use strict;
 use warnings;
 our $VERSION = '0.01';
@@ -239,7 +239,6 @@ Read configuration file. Docs TBD.
 
 =cut
 
-my $pkg_id;
 my %command_spec = (
     table => {
         method => "add_table",
@@ -265,19 +264,15 @@ my %command_spec = (
         unsafe => 1,
         args   => sub {
             my ($where, $table, $code) = @_;
-            my $package = __PACKAGE__."::__ANON__::".++$pkg_id;
-            my ($file, $line) = @$where;
-            my $coderef = eval ## no critic
-            qq{
-                package $package;
-                use strict;
-                use warnings;\n# line $line $file
-                sub {\n$code };
-            };
-            croak "Compilation of user supplied code failed"
-                unless $coderef;
-            return ($table, $coderef);
+            return ($table, _compile_hook($where, $code));
         },
+    },
+    on_connect => {
+        method => 'post_connect_hook',
+        max    => '0E0',
+        slurp  => 1,
+        unsafe => 1,
+        args   => \&_compile_hook,
     },
 );
 
@@ -317,7 +312,7 @@ sub read_config {
                 unless $spec;
 
             croak "wrong number of arguments for '$command'"
-                unless @args >= $spec->{min} || 0 and @args <= ($spec->{max} || 9**9**9);
+                unless @args >= ($spec->{min} // 0) and @args <= ($spec->{max} // 9**9**9);
 
             croak "command '$command' is unsafe, but unsafe mode not turned on"
                 if $spec->{unsafe} and not $self->unsafe;
@@ -346,6 +341,25 @@ sub read_config {
 
     # all folks
     return $self;
+};
+
+my $pkg_id;
+sub _compile_hook {
+    my ($where, $content) = @_;
+
+    my $package = __PACKAGE__."::__ANON__::".++$pkg_id;
+    my ($file, $line) = @$where;
+    my $coderef = eval ## no critic
+    qq{
+        package $package;
+        use strict;
+        use warnings;\n# line $line $file
+        sub {\n$content };
+    };
+    croak "Compilation of user supplied code failed: $@"
+        unless $coderef;
+
+    return $coderef;
 };
 
 sub _args_link {
