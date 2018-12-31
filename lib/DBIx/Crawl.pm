@@ -115,11 +115,14 @@ Options may include:
 sub connect {
     my ($self, %opt) = @_;
 
+    # first and foremost, the special options
     my $rw  = delete $opt{rw};
     my $dbh = delete $opt{dbh};
 
     if (!$dbh) {
-        # if read anything from config, assume it as default
+        # if we've read anything from config, assume it as default
+        defined $opt{$_} or delete $opt{$_}
+            for keys %opt;
         my $default = $self->connect_info;
         %opt = ( %$default, %opt );
 
