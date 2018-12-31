@@ -222,8 +222,15 @@ my %command_spec = (
         },
     },
 );
+
 sub read_config {
     my ($self, $fd, $fname) = @_;
+
+    if (ref $fd eq 'SCALAR') {
+        open my $fdcopy, "<", $fd
+            or croak "Failed to mmap scalar $fd: $!";
+        $fd = $fdcopy;
+    };
 
     $fname ||= '<INPUT>';
     my $line;
@@ -474,19 +481,26 @@ sub get_insert_script {
 
     my @work;
 
-    push @work, "BEGIN WORK;";
+    push @work, "BEGIN;";
     foreach my $table( keys %$all ) {
         my $entries = $all->{$table};
         foreach my $item (values %$entries) {
             my @keys = sort keys %$item;
             my @esc_keys = map { "`$_`" } @keys;
-            my @values = map { my $x = $_; $x =~ s/'/''/g; "'$x'" } @$item{@keys};
+            my @values = map { _value2sql($_) } @$item{@keys};
             push @work, sprintf "INSERT INTO `%s`(%s) VALUES (%s);",
                 $table, (join ", ", @esc_keys), (join ", ", @values);
         };
     };
     push @work, "COMMIT;";
     return join "\n", @work, '';
+};
+
+sub _value2sql {
+    my $str = shift;
+    return 'NULL' unless defined $str;
+    $str =~ s/'/''/g;
+    return "'$str'";
 };
 
 =head2 DATABASE CONNECTION METHODS
