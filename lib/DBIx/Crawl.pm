@@ -35,18 +35,24 @@ Quick summary of what the module does.
 
 =over
 
-=item keys - table to primary key hash
-
-=item links - foreign key hash
-
-=item data - fetched data cache based on primary key
-
-=item seen - fetched data search cache to avoid looping or checking out data twice.
-
-=item post_fetch_hooks - per-table post-fetch processing, like removing passwords etc.
-
-=item unsafe - allow unsafe operations, like execution of user-supplied code
+=item C<unsafe> - allow unsafe operations, like execution of user-supplied code
 (default: off)
+
+=item C<keys> - table to primary key hash
+
+=item C<links> - foreign key hash
+
+=item C<data> - fetched data cache based on primary key
+
+=item C<seen> - fetched data search cache to avoid looping or checking out data twice.
+
+=item C<post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
+
+=item C<dbh> - database connection to be used for fetching/storing data.
+
+=item C<dbh_allow_write> - unless set, all attempts to write to database will fail.
+
+=item C<post_connect_hook> - execute this code on database handle upon connection.
 
 =back
 
@@ -55,6 +61,10 @@ Quick summary of what the module does.
 use Carp;
 use Log::Any qw($log);
 use Moo;
+
+has dbh => is => "rw";
+has dbh_allow_write => is => "rw" => default => sub { 0 };
+has post_connect_hook => is => "rw";
 
 # Allow execution of client code
 has unsafe => is => "rw", default => sub { 0 };
@@ -82,6 +92,54 @@ has post_fetch_hooks => is => "rw", default => sub { {} };
 As of current, cache, DBI layer, and database structure class are all mixed
 together.
 This may or may not change in the future.
+
+=head2 HIGH-LEVEL SETUP
+
+=head3 connect( %options )
+
+Connect to a database, or use existing connection.
+
+Options may include:
+
+=over
+
+=back
+
+=cut
+
+sub connect {
+    my ($self, %opt) = @_;
+
+    my $rw  = delete $opt{rw};
+    my $dbh = delete $opt{dbh};
+
+    if (!$dbh) {
+        my $driver = delete $opt{driver};
+        my $user   = delete $opt{user};
+        my $pass   = delete $opt{pass};
+        my $extra  = delete $opt{extra} || {};
+        $extra = { RaiseError => 1, %$extra };
+
+        my $dbi    = delete $opt{dbi};
+        croak "don't know where to connect to - either dbh, dbi, or driver must be set"
+            unless $dbi || $driver;
+
+        $dbi     ||= "$driver:".join ";",
+            map { "$_=$opt{$_}" } grep { defined $opt{$_} } keys %opt;
+
+        require DBI;
+        $dbh = DBI->connect($dbi, $user, $pass, $extra);
+
+        if (my $code = $self->post_connect_hook) {
+            $code->($dbh);
+        };
+    };
+
+    $self->dbh( $dbh );
+    $self->dbh_allow_write( $rw ? 1 : 0 );
+
+    return $self;
+};
 
 =head2 DDL METHODS
 
@@ -505,10 +563,7 @@ sub _value2sql {
 
 =head2 DATABASE CONNECTION METHODS
 
-As of current, C<$dbh> needs to be passed around.
-This is wrong and will possibly be replaced with something better in the future.
-
-=head3 fetch
+=head3 fetch( @list )
 
 Fetch data elements, recursively, and store them in cache.
 Every data point is given as
@@ -520,7 +575,7 @@ Links are followed, with aggressive caching.
 =cut
 
 sub fetch {
-    my ($self, $dbh, @todo) = @_;
+    my ($self, @todo) = @_;
 
     while (@todo) {
         my $req = shift @todo;
@@ -532,7 +587,7 @@ sub fetch {
         $log->info( "\tfetching from $table where ($req[0]) = ($req[1]), seen=$seen" );
         next if $seen;
 
-        my @data = $self->fetch_one( $dbh, $table, $key );
+        my @data = $self->fetch_one( $table, $key );
 
         $log->info("\tGot items: ", scalar @data);
 
@@ -550,7 +605,7 @@ Execute one query and return it, without modifying anything.
 =cut
 
 sub fetch_one {
-    my ($self, $dbh, $table, $key) = @_;
+    my ($self, $table, $key) = @_;
 
     my @args;
     my $sql = "SELECT * FROM `$table` WHERE 1";
@@ -562,7 +617,7 @@ sub fetch_one {
 
     $log->info( "\tfetch: $sql [@args]" );
 
-    my $sth = $dbh->prepare( $sql );
+    my $sth = $self->dbh->prepare( $sql );
     $sth->execute(@args);
 
     my @ret;
@@ -582,8 +637,9 @@ Insert ALL cached data into target database as one transaction.
 =cut
 
 sub insert {
-    my ($self, $dbh) = @_;
+    my ($self) = @_;
 
+    $self->_rw_check;
     my $data = $self->data;
 
     my @todo;
@@ -593,11 +649,11 @@ sub insert {
         };
     };
 
-    $dbh->begin_work;
+    $self->dbh->begin_work;
     foreach (@todo) {
-        $self->insert_one( $dbh, @$_ );
+        $self->insert_one( @$_ );
     };
-    $dbh->commit;
+    $self->dbh->commit;
 
 };
 
@@ -609,7 +665,9 @@ in any way.
 =cut
 
 sub insert_one {
-    my ($self, $dbh, $table, $data) = @_;
+    my ($self, $table, $data) = @_;
+
+    $self->_rw_check;
 
     my @fields = sort grep { defined $data->{$_} } keys %$data;
     my $fields = join ",", map { "`$_`" } @fields;
@@ -620,8 +678,17 @@ sub insert_one {
 
     $log->info("\t$sql [@args]");
 
-    my $sth = $dbh->prepare( $sql );
+    my $sth = $self->dbh->prepare( $sql );
     $sth->execute( @args );
+};
+
+sub _rw_check {
+    my $self = shift;
+
+    croak "read-write operation requested in read-only mode, set rw=>1 on connect"
+        unless $self->dbh_allow_write;
+
+    $self;
 };
 
 =head1 AUTHOR

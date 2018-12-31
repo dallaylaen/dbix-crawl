@@ -45,7 +45,8 @@ table foo id
 link foo.parent foo.id
 CONF
 
-$crawl->fetch( $dbh_in, [ foo => { name => 'foodbard' } ] );
+$crawl->connect( dbh => $dbh_in );
+$crawl->fetch( [ foo => { name => 'foodbard' } ] );
 
 my $partial = $crawl->get_insert_script;
 

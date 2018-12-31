@@ -25,7 +25,6 @@ get_options_help (
 die "--config is required"
     unless defined $opt{config};
 
-
 # parse args
 my @todo;
 foreach (@ARGV) {
@@ -53,8 +52,14 @@ $opt{db} = "SQLite:dbname=$opt{db}"
     if $opt{db} !~ /:/;
 my $dbh = DBI->connect( "dbi:$opt{db}", $opt{user}, $opt{pass}, { RaiseError => 1 } );
 
+if (my $code = $slice->post_connect_hook) {
+    $code->($dbh); # doh this is unsafe!!1111
+};
+
+$slice->connect( dbh => $dbh );
+
 # fetch!
-$slice->fetch( $dbh, @todo );
+$slice->fetch( @todo );
 print $slice->get_insert_script;
 
 sub arg_to_table {

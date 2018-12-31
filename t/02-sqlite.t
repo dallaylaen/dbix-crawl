@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use Test::More;
+use Test::Exception;
 use DBI;
 use DBD::SQLite;
 use Log::Any::Test;
@@ -84,11 +85,17 @@ $slice->add_link( qw( receipt customer_id customer id ) );
 $slice->add_link( qw( receipt id receipt_good receipt_id ) );
 $slice->add_link( qw( receipt_good good_id good id ) );
 
-$slice->fetch( $dbh_in, [ manager => { id => 1 } ] );
+$slice->connect( dbh => $dbh_in );
+$slice->fetch( [ manager => { id => 1 } ] );
 
 note explain $slice;
 
-$slice->insert( $dbh_out );
+$slice->connect( dbh => $dbh_out );
+throws_ok {
+    $slice->insert;
+} qr/read-only/, "nope! need rw=>1";
+$slice->connect( dbh => $dbh_out, rw => 1 );
+$slice->insert;
 
 is_deeply( dump_table( $dbh_out, "manager", "id" ), [
     { id => 1, name => 'peter' }
