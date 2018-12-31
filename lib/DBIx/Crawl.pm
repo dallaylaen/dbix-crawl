@@ -298,13 +298,13 @@ sub read_config {
 
             my $spec = $command_spec{$command};
 
-            croak "unknown command '$command'"
+            die "unknown command '$command'"
                 unless $spec;
 
-            croak "wrong number of arguments for '$command'"
+            die "wrong number of arguments for '$command'"
                 unless @args >= ($spec->{min} // 0) and @args <= ($spec->{max} // 9**9**9);
 
-            croak "command '$command' is unsafe, but unsafe mode not turned on"
+            die "command '$command' is unsafe, but unsafe mode not turned on"
                 if $spec->{unsafe} and not $self->unsafe;
 
 
@@ -322,6 +322,7 @@ sub read_config {
         1;
     } || do {
         my $err = $@;
+        # die with config file line:number and not calling code
         $err =~ s/ +at .*? line \d+\.?\n?$//s;
         $err .= " in $fname line $line\n";
         die $err;
@@ -344,12 +345,12 @@ sub _tokenize_file {
         /^\s*#/ and next;
 
         /^\s*(\w+)((?:\s+$re_arg)*)(?:\s+(\{.*\}))?\s*$/
-            or croak "Bad line format: $_";
+            or die "Bad line format: $_";
 
         my ($command, $allargs, $opt) = ($1, $2, $3);
 
         # TODO decode opt
-        croak "options not available for '$command'"
+        die "options not available for '$command'"
             if $opt;
 
         my @args;
@@ -366,7 +367,7 @@ sub _tokenize_file {
                     }
                     push @parts, $_;
                 };
-                croak "runaway argument - could not find a $eof until end of file";
+                die "runaway argument - could not find a $eof until end of file";
             } else {
                 push @args, _unquote($_);
             };
@@ -415,10 +416,10 @@ sub _args_link {
     my ($where, $from, $to) = @_;
     my @out;
     $from =~ /^(\w+)\.(\w+)$/
-        or croak ("First argument must be table.field for command 'link'");
+        or die ("First argument must be table.field for command 'link'");
     push @out, $1, $2;
     $to   =~ /^(\w+)(?:\.(\w+))?$/
-        or croak ("Second argument must be table.field or just table for command 'link'");
+        or die ("Second argument must be table.field or just table for command 'link'");
     push @out, $1, $2?$2:();
     return @out;
 };
