@@ -63,10 +63,10 @@ note explain $slice->links;
 
 throws_ok {
     $slice->read_config (make_fd(<<'CONF'));
-        post_fetch customer
+        post_fetch customer <<EOF
             my $data = shift;
             $data->{foobar} = 'hey';
-        __END__
+        EOF
 CONF
 } qr/unsafe/, "unsafe command prohibited";
 
@@ -74,10 +74,10 @@ $slice->unsafe(1);
 
 lives_ok {
     $slice->read_config (make_fd(<<'CONF'));
-        post_fetch customer
+        post_fetch customer <<EOF
             my $data = shift;
             $data->{foobar} = 'hey';
-        __END__
+        EOF
 CONF
 };
 

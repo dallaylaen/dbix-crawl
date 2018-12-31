@@ -11,11 +11,11 @@ my $crawl = DBIx::Crawl->new;
 
 my $conf = <<'CONF';
     table minimal id
-    post_fetch minimal
+    post_fetch minimal <<PERL
         my $data = shift;
         $data->{id} or die "no id found";
         $data->{name} = "Entry #$data->{id}";
-    __END__
+    PERL
 CONF
 
 throws_ok {

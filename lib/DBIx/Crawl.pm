@@ -258,9 +258,8 @@ my %command_spec = (
     },
     post_fetch => {
         method => 'add_post_fetch',
-        min    => 1,
-        max    => 1,
-        slurp  => 1,
+        min    => 2,
+        max    => 2,
         unsafe => 1,
         args   => sub {
             my ($where, $table, $code) = @_;
@@ -269,12 +268,14 @@ my %command_spec = (
     },
     on_connect => {
         method => 'post_connect_hook',
-        max    => '0E0',
-        slurp  => 1,
+        min    => 1,
+        max    => 1,
         unsafe => 1,
         args   => \&_compile_hook,
     },
 );
+
+my $re_arg = qr([\w\.]+|"(?:[^"]+|\\")*"|<<\w+);
 
 sub read_config {
     my ($self, $fd, $fname) = @_;
@@ -296,11 +297,19 @@ sub read_config {
             /\S/ or next;
             /^\s*#/ and next;
 
-            /^\s*(\w+)\s+(.*?)(?:\s+(\{.*\}))?\s*$/
+            /^\s*(\w+)((?:\s+$re_arg)*)(?:\s+(\{.*\}))?\s*$/
                 or croak "Bad line format: $_";
 
             my ($command, $allargs, $opt) = ($1, $2, $3);
-            my @args = split /\s+/, $allargs;
+
+            my @args;
+            foreach ($allargs =~ /($re_arg)/g) {
+                if (/^<<(\w+)$/) {
+                    push @args, _slurp($fd, $1);
+                } else {
+                    push @args, _unquote($_);
+                };
+            };
 
             # TODO decode opt
             croak "options not available for '$command'"
@@ -317,8 +326,6 @@ sub read_config {
             croak "command '$command' is unsafe, but unsafe mode not turned on"
                 if $spec->{unsafe} and not $self->unsafe;
 
-            push @args, _slurp($fd, '__END__')
-                if $spec->{slurp};
 
             @args = $spec->{args}->([$fname, $line], @args)
                 if $spec->{args};
@@ -341,6 +348,20 @@ sub read_config {
 
     # all folks
     return $self;
+};
+
+my %unquote_replace = ( n => "\n" );
+sub _unquote {
+    my $str = shift;
+
+    return $str if $str =~ /^[\w\.]+$/;
+
+    if ( $str =~ s/^"// and $str =~ s/"$// ) {
+        $str =~ s/\\(.)/$unquote_replace{$1} || $1/ge;
+        return $str;
+    };
+
+    confess "Bug in ".__PACKAGE__.", cannot unquote line: '$str'";
 };
 
 my $pkg_id;
