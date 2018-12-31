@@ -287,33 +287,14 @@ sub read_config {
     };
 
     $fname ||= '<INPUT>';
-    my $line;
 
+    my $line; # global because we want to die at appropriate place
     eval {
         my @todo;
-        while (<$fd>) {
-            $line++;
-            # comment
-            /\S/ or next;
-            /^\s*#/ and next;
+        my @raw_cmd = _tokenize_file($fd, \$line);
 
-            /^\s*(\w+)((?:\s+$re_arg)*)(?:\s+(\{.*\}))?\s*$/
-                or croak "Bad line format: $_";
-
-            my ($command, $allargs, $opt) = ($1, $2, $3);
-
-            my @args;
-            foreach ($allargs =~ /($re_arg)/g) {
-                if (/^<<(\w+)$/) {
-                    push @args, _slurp($fd, $1);
-                } else {
-                    push @args, _unquote($_);
-                };
-            };
-
-            # TODO decode opt
-            croak "options not available for '$command'"
-                if $opt;
+        foreach my $found (@raw_cmd) {
+            ($line, my ($command, $extra, @args)) = @$found;
 
             my $spec = $command_spec{$command};
 
@@ -348,6 +329,53 @@ sub read_config {
 
     # all folks
     return $self;
+};
+
+# in:  $filehandle, $ref_to_line_number
+# out: [ line, command, \%opts, @args ], ...
+sub _tokenize_file {
+    my ($fd, $line) = @_;
+
+    my @out;
+    while (<$fd>) {
+        $$line++;
+        # comment
+        /\S/ or next;
+        /^\s*#/ and next;
+
+        /^\s*(\w+)((?:\s+$re_arg)*)(?:\s+(\{.*\}))?\s*$/
+            or croak "Bad line format: $_";
+
+        my ($command, $allargs, $opt) = ($1, $2, $3);
+
+        # TODO decode opt
+        croak "options not available for '$command'"
+            if $opt;
+
+        my @args;
+        ARG: foreach ($allargs =~ /($re_arg)/g) {
+            if (/^<<(\w+)$/) {
+                # slurp part of file, adjust line
+                my $eof = $1;
+                my $rex = qr(\s*\Q$eof\E\s*$);
+                my @parts;
+                while (<$fd>) {
+                    if ($_ =~ $rex) {
+                        push @args, join '', @parts;
+                        next ARG;
+                    }
+                    push @parts, $_;
+                };
+                croak "runaway argument - could not find a $eof until end of file";
+            } else {
+                push @args, _unquote($_);
+            };
+        };
+
+        push @out, [ $$line, $command, undef, @args ];
+    };
+
+    return @out;
 };
 
 my %unquote_replace = ( n => "\n" );
@@ -393,18 +421,6 @@ sub _args_link {
         or croak ("Second argument must be table.field or just table for command 'link'");
     push @out, $1, $2?$2:();
     return @out;
-};
-
-sub _slurp {
-    my ($fd, $eof) = @_;
-
-    my @parts;
-    while (<$fd>) {
-        /^\s*\Q$eof\E\s*$/ and return join '', @parts;
-        push @parts, $_;
-    };
-
-    croak "failed to find a '$eof' until end of file";
 };
 
 =head2 DDL QUERYING
