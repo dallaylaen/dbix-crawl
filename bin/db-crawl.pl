@@ -10,16 +10,17 @@ use lib dirname(__FILE__)."/../lib";
 use DBIx::Crawl;
 
 my %opt;
+my %conn;
 get_options_help (
     "$0 - dump partial database content based on links",
     "Usage: $0 [options] [table:field=value,...] ...",
     "Options may include",
     [ "config=s" => \$opt{config}, "(required) - list of known tables & links" ],
-    [ "db=s"     => \$opt{db}, "- database to work on"],
+    [ "db=s"     => \$conn{dbi},   "- database to work on"],
     "        database is given as 'mysql:host=...;port=...'",
     "        if filename is given instead, assume SQLite",
-    [ "user=s"   => \$opt{user}, "- database user" ],
-    [ "pass=s"   => \$opt{pass}, "- database password" ], # TODO read online
+    [ "user=s"   => \$conn{user},  "- database user" ],
+    [ "pass=s"   => \$conn{pass},  "- database password" ], # TODO read online
 );
 
 die "--config is required"
@@ -43,22 +44,12 @@ if (!@todo) {
     exit 0;
 };
 
-die "--db is required"
-    if !defined $opt{db} and @ARGV;
-
-# connect to DB
-# SQLite simplifies testing
-$opt{db} = "SQLite:dbname=$opt{db}"
-    if $opt{db} !~ /:/;
-my $dbh = DBI->connect( "dbi:$opt{db}", $opt{user}, $opt{pass}, { RaiseError => 1 } );
-
-if (my $code = $slice->post_connect_hook) {
-    $code->($dbh); # doh this is unsafe!!1111
-};
-
-$slice->connect( dbh => $dbh );
+# assume SQLite to simplify testing
+$conn{dbi} = "SQLite:dbname=$conn{dbi}"
+    if defined $conn{dbi} and $conn{dbi} !~ /:/;
 
 # fetch!
+$slice->connect( %conn );
 $slice->fetch( @todo );
 print $slice->get_insert_script;
 

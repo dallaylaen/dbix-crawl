@@ -48,6 +48,8 @@ Quick summary of what the module does.
 
 =item C<post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
 
+=item C<connect_info> - default values to connect to database
+
 =item C<dbh> - database connection to be used for fetching/storing data.
 
 =item C<dbh_allow_write> - unless set, all attempts to write to database will fail.
@@ -61,6 +63,9 @@ Quick summary of what the module does.
 use Carp;
 use Log::Any qw($log);
 use Moo;
+
+# field => value, e.g. port, host, user ...
+has connect_info => is => "rw", default => sub { {} };
 
 has dbh => is => "rw";
 has dbh_allow_write => is => "rw" => default => sub { 0 };
@@ -114,6 +119,10 @@ sub connect {
     my $dbh = delete $opt{dbh};
 
     if (!$dbh) {
+        # if read anything from config, assume it as default
+        my $default = $self->connect_info;
+        %opt = ( %$default, %opt );
+
         my $driver = delete $opt{driver};
         my $user   = delete $opt{user};
         my $pass   = delete $opt{pass};
@@ -126,6 +135,8 @@ sub connect {
 
         $dbi     ||= "$driver:".join ";",
             map { "$_=$opt{$_}" } grep { defined $opt{$_} } keys %opt;
+
+        $dbi = "dbi:$dbi" unless $dbi =~ /^dbi:/;
 
         require DBI;
         $dbh = DBI->connect($dbi, $user, $pass, $extra);
@@ -240,6 +251,14 @@ Read configuration file. Docs TBD.
 =cut
 
 my %command_spec = (
+    connect => {
+        method => sub {
+            my ($self, $field, $value) = @_;
+            $self->connect_info->{$field} = $value
+        },
+        min    => 2,
+        max    => 2,
+    },
     table => {
         method => "add_table",
         min    => 2,
