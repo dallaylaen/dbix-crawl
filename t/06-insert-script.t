@@ -44,8 +44,9 @@ $crawl->read_config(\<<"CONF");
 table foo id
 link foo.parent foo.id
 pre_insert_sql <<SQL
-    -- this is just a comment;
+    -- pre_insert; -- this is just a comment
 SQL
+post_insert_sql "-- this is just a post_insert comment;"
 CONF
 
 $crawl->connect( dbh => $dbh_in );
@@ -56,14 +57,15 @@ my $partial = $crawl->get_insert_script;
 subtest "partial dataset insert script" => sub {
     note $partial;
 
-    my @parts = split(/\s*;\s*/s, $partial);
+    my @parts = grep { /\S/ } split(/\n/s, $partial);
     is_multi_line( \@parts, [
         qr/^\s*BEGIN/,
-        qr/--.*comment/,
+        qr/--.*pre_insert.*comment/,
         qr/^INSERT INTO\W+foo/,
         qr/^INSERT INTO\W+foo/,
         qr/^INSERT INTO\W+foo/,
-        qr/^COMMIT$/,
+        qr/--.*post_insert.*comment/,
+        qr/^COMMIT;$/,
     ], "insert script as expected");
 };
 
