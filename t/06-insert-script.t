@@ -4,8 +4,10 @@ use strict;
 use warnings;
 use Test::More;
 use Test::Exception;
-use DBI;
-use DBD::SQLite;
+
+use FindBin qw($Bin);
+use lib "$Bin/lib";
+use Local::Test::Util;
 
 use DBIx::Crawl;
 
@@ -17,8 +19,7 @@ $SIG{__WARN__} = sub {
     warn $msg;
 };
 
-my $dbfile = ":memory:";
-my $dbh_in = DBI->connect("dbi:SQLite:dbname=$dbfile", '', '', { RaiseError => 1 });
+my $dbh_in = connect_sqlite;
 my $ddl = <<"DDL";
     CREATE TABLE foo(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,8 +27,8 @@ my $ddl = <<"DDL";
         parent INTEGER
     );
 DDL
-init_db($dbh_in, $ddl);
-init_db($dbh_in, <<"INSERT");
+dbh_do($dbh_in, $ddl);
+dbh_do($dbh_in, <<"INSERT");
     INSERT INTO foo(id,name,parent) VALUES
     (1, 'foo', NULL),
     (2, 'bar', NULL),
@@ -58,7 +59,7 @@ subtest "partial dataset insert script" => sub {
     note $partial;
 
     my @parts = grep { /\S/ } split(/\n/s, $partial);
-    is_multi_line( \@parts, [
+    list_like( \@parts, [
         qr/^\s*BEGIN/,
         qr/--.*pre_insert.*comment/,
         qr/^INSERT INTO\W+foo/,
@@ -71,10 +72,10 @@ subtest "partial dataset insert script" => sub {
 
 my $dbh_out = DBI->connect("dbi:SQLite:dbname=:memory:", '', '', { RaiseError => 1 });
 
-init_db( $dbh_out, $ddl );
+dbh_do( $dbh_out, $ddl );
 
 lives_ok {
-    init_db( $dbh_out, $partial );
+    dbh_do( $dbh_out, $partial );
 } "generated script actually works";
 
 my $select = $dbh_out->prepare( "SELECT * FROM foo ORDER BY id" );
@@ -90,27 +91,4 @@ is_deeply $data, [
 ok !@warn, "no warnings total";
 done_testing;
 
-sub init_db {
-    my ($dbh, $ddl) = @_;
 
-    foreach (split /;\n/, $ddl ) {
-        /\S/ or next;
-        $dbh->do($_);
-    };
-
-    return $dbh;
-};
-
-# TODO use Assert::Refute for this
-sub is_multi_line {
-    my ($lines, $rex, $msg) = @_;
-
-    $msg ||= "multiple lines match regexen";
-
-    subtest $msg => sub {
-        is scalar @$lines, scalar @$rex, "number of lines equals ".scalar @$rex;
-        for( my $i = 0; $i<@$rex; $i++ ) {
-            like $lines->[$i], $rex->[$i], "line $i matches $rex->[$i]";
-        };
-    };
-};
