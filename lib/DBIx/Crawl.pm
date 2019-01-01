@@ -56,6 +56,10 @@ Quick summary of what the module does.
 
 =item C<post_connect_hook> - execute this code on database handle upon connection.
 
+=item C<pre_insert_sql> - command(s) to be executed on insert transaction start.
+
+=item C<post_insert_sql> - command(s) to be executed on insert transaction end.
+
 =back
 
 =cut
@@ -70,6 +74,9 @@ has connect_info => is => "rw", default => sub { {} };
 has dbh => is => "rw";
 has dbh_allow_write => is => "rw" => default => sub { 0 };
 has post_connect_hook => is => "rw";
+
+has pre_insert_sql    => is => "rw", default => sub { [] };
+has post_insert_sql   => is => "rw", default => sub { [] };
 
 # Allow execution of client code
 has unsafe => is => "rw", default => sub { 0 };
@@ -247,6 +254,48 @@ sub add_post_fetch {
     $self->post_fetch_hooks->{$table} = $code;
 };
 
+=head3 add_pre_insert_sql
+
+Add an SQL statement to be executed AFTER insert transaction starts
+but BEFORE any actual insert is made.
+
+Multiple statements may be added, and will be executed in order.
+
+The statement must end in a semicolon and optional comment starting with a C<-->.
+
+=cut
+
+sub add_pre_insert_sql {
+    my ($self, $sql) = @_;
+
+    $sql =~ /;\s*(?:--[^\n]*)?\n*$/
+        or croak "SQL must end in a semicolon(;) and optionally a comment";
+
+    push @{ $self->pre_insert_sql }, $sql;
+};
+
+=head3 add_post_insert_sql
+
+Add an SQL statement to be executed AFTER inserts are made
+but BEFORE insert transaction ends.
+
+Multiple statements may be added, and will be executed in order.
+
+The statement must end in a semicolon and optional comment starting with a C<-->.
+
+=cut
+
+sub add_post_insert_sql {
+    my ($self, $sql) = @_;
+
+    # TODO need to parse actual SQL to prevent runaways
+    # this at least protects from most stupid errors
+    $sql =~ /;\s*(?:--[^\n]*)?\n*$/
+        or croak "SQL must end in a semicolon(;) and optionally a comment";
+
+    push @{ $self->post_insert_sql }, $sql;
+};
+
 =head3 read_config( $file_handle )
 
 Read configuration file. Docs TBD.
@@ -294,6 +343,16 @@ my %command_spec = (
         max    => 1,
         unsafe => 1,
         args   => \&_compile_hook,
+    },
+    pre_insert_sql => {
+        method => 'add_pre_insert_sql',
+        min => 1,
+        max => 1,
+    },
+    post_insert_sql => {
+        method => 'add_post_insert_sql',
+        min => 1,
+        max => 1,
     },
 );
 
@@ -614,6 +673,7 @@ sub get_insert_script {
     my @work;
 
     push @work, "BEGIN;";
+    push @work, @{ $self->pre_insert_sql };
     foreach my $table( keys %$all ) {
         my $entries = $all->{$table};
         foreach my $item (values %$entries) {
@@ -624,6 +684,7 @@ sub get_insert_script {
                 $table, (join ", ", @esc_keys), (join ", ", @values);
         };
     };
+    push @work, @{ $self->post_insert_sql };
     push @work, "COMMIT;";
     return join "\n", @work, '';
 };
@@ -724,9 +785,13 @@ sub insert {
     };
 
     $self->dbh->begin_work;
+    $self->dbh->do($_)
+        for @{ $self->pre_insert_sql };
     foreach (@todo) {
         $self->insert_one( @$_ );
     };
+    $self->dbh->do($_)
+        for @{ $self->post_insert_sql };
     $self->dbh->commit;
 
 };

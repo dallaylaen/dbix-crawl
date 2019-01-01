@@ -43,6 +43,9 @@ my $crawl = DBIx::Crawl->new;
 $crawl->read_config(\<<"CONF");
 table foo id
 link foo.parent foo.id
+pre_insert_sql <<SQL
+    -- this is just a comment;
+SQL
 CONF
 
 $crawl->connect( dbh => $dbh_in );
@@ -54,12 +57,14 @@ subtest "partial dataset insert script" => sub {
     note $partial;
 
     my @parts = split(/\s*;\s*/s, $partial);
-    is scalar @parts, 5, "5 stm issued";
-    like $parts[0], qr/^\s*BEGIN/, "begin";
-    like $parts[1], qr/^INSERT INTO\W+foo/, "insert statement";
-    like $parts[2], qr/^INSERT INTO\W+foo/, "insert statement";
-    like $parts[3], qr/^INSERT INTO\W+foo/, "insert statement";
-    like $parts[4], qr/^COMMIT$/, "commit";
+    is_multi_line( \@parts, [
+        qr/^\s*BEGIN/,
+        qr/--.*comment/,
+        qr/^INSERT INTO\W+foo/,
+        qr/^INSERT INTO\W+foo/,
+        qr/^INSERT INTO\W+foo/,
+        qr/^COMMIT$/,
+    ], "insert script as expected");
 };
 
 my $dbh_out = DBI->connect("dbi:SQLite:dbname=:memory:", '', '', { RaiseError => 1 });
@@ -92,4 +97,18 @@ sub init_db {
     };
 
     return $dbh;
+};
+
+# TODO use Assert::Refute for this
+sub is_multi_line {
+    my ($lines, $rex, $msg) = @_;
+
+    $msg ||= "multiple lines match regexen";
+
+    subtest $msg => sub {
+        is scalar @$lines, scalar @$rex, "number of lines equals ".scalar @$rex;
+        for( my $i = 0; $i<@$rex; $i++ ) {
+            like $lines->[$i], $rex->[$i], "line $i matches $rex->[$i]";
+        };
+    };
 };
