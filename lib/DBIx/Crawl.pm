@@ -48,6 +48,8 @@ Quick summary of what the module does.
 
 =item C<post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
 
+=item C<field_replace> - hash with field replacement rules based on regular expressions.
+
 =item C<connect_info> - default values to connect to database
 
 =item C<dbh> - database connection to be used for fetching/storing data.
@@ -59,6 +61,7 @@ Quick summary of what the module does.
 =item C<pre_insert_sql> - command(s) to be executed on insert transaction start.
 
 =item C<post_insert_sql> - command(s) to be executed on insert transaction end.
+
 
 =back
 
@@ -96,6 +99,9 @@ has seen => is => "rw", default => sub { {} };
 # table => sub { ... }
 # TODO rename
 has post_fetch_hooks => is => "rw", default => sub { {} };
+
+# table => field => [ regex, new_value, ... ]
+has field_replace => is => "rw", default => sub { {} };
 
 # DDL
 
@@ -254,6 +260,31 @@ sub add_post_fetch {
     $self->post_fetch_hooks->{$table} = $code;
 };
 
+=head3 add_field_replace( $table, $field, $pattern, $replacement )
+
+Replace a field in a table if it matches regular expression.
+
+C<undef> as replacement is accepted and means null.
+
+=cut
+
+sub add_field_replace {
+    my ($self, $table, $field, $rex, $replace) = @_;
+
+    $self->croak ("Attempt to add field replacement for nonexistent table $table")
+        unless $self->keys->{$table};
+
+    $rex = qr(^$rex$);
+
+    if (defined $replace) {
+        my @naked = $replace =~ /\\\$|\$\d+|(\$)/;
+        croak 'Bare $ found in replace string, use \$ or $1, $2 etc'
+            if @naked;
+    };
+
+    $self->field_replace->{$table}{$field} = [ $rex, $replace ];
+};
+
 =head3 add_pre_insert_sql
 
 Add an SQL statement to be executed AFTER insert transaction starts
@@ -353,6 +384,15 @@ my %command_spec = (
         method => 'add_post_insert_sql',
         min => 1,
         max => 1,
+    },
+    field_replace => {
+        method => 'add_field_replace',
+        min => 2,
+        max => 3,
+        args => sub {
+            my ($where, $field, @rest) = @_;
+            return _split_field( $field ), @rest;
+        },
     },
 );
 
@@ -495,14 +535,14 @@ sub _compile_hook {
 
 sub _args_link {
     my ($where, $from, $to) = @_;
-    my @out;
-    $from =~ /^(\w+)\.(\w+)$/
-        or die ("First argument must be table.field for command 'link'");
-    push @out, $1, $2;
-    $to   =~ /^(\w+)(?:\.(\w+))?$/
-        or die ("Second argument must be table.field or just table for command 'link'");
-    push @out, $1, $2?$2:();
-    return @out;
+    return _split_field( $from ), $to =~ /^\w+$/ ? ($to) : _split_field($to);
+};
+
+sub _split_field {
+    my $str = shift;
+    $str =~ /^(\w+)\.(\w+)$/
+        or die ("Argument must be in table.field form, not '$str'");
+    return ($1, $2);
 };
 
 =head2 DDL QUERYING
@@ -757,12 +797,26 @@ sub fetch_one {
 
     my @ret;
     my $hook = $self->post_fetch_hooks->{$table};
+    my $replace = $self->field_replace->{$table};
     while (my $row = $sth->fetchrow_hashref) {
+        _apply_replace( $row, $replace );
         $hook->($row) if $hook;
         push @ret, $row;
     };
 
     return @ret;
+};
+
+sub _apply_replace {
+    my ($row, $replace) = @_;
+    return unless $replace;
+    foreach (keys %$replace) {
+        defined $row->{$_} or next;
+        my ($rex, $subst) = @{ $replace->{$_} };
+        my @match = $row->{$_} =~ $rex or next;
+        # TODO process $1, $2 etc
+        $row->{$_} = $subst;
+    };
 };
 
 =head3 insert
