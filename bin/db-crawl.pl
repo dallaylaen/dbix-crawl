@@ -26,16 +26,13 @@ get_options_help (
 die "--config is required"
     unless defined $opt{config};
 
-# parse args
-my @todo;
-foreach (@ARGV) {
-    push @todo, arg_to_table($_);
-};
-
 # read config
 my $fd = openfile( $opt{config} );
 my $slice = DBIx::Crawl->new( unsafe => 1 );
 $slice->read_config($fd);
+
+# convert leftover args to Crawl's format
+my @todo = map { arg_to_table($slice, $_) } @ARGV;
 
 if (!@todo) {
     # Still SQL-compatible output
@@ -55,13 +52,17 @@ print $slice->get_insert_script;
 
 sub arg_to_table {
     # table:field="value",...
-    my ($arg) = @_;
+    my ($crawl, $arg) = @_;
 
     $arg =~ /^(\w+):((\w+=\w+)(,\w+=\w+)*|all)$/
-        or die "Bad argument $arg, must be 'table:field=value,...'";
+        or die "Bad argument '$arg', must be 'table:field=value,...'\n";
 
     my $table = $1;
     my $spec  = $2;
+
+    die "Unknown table '$table' requested by '$arg'\n"
+        unless $crawl->keys->{$table};
+
     # TODO detect duplicates & die
     my %hash;
     %hash = map { split /=/, $_, 2 } split /,/, $spec
