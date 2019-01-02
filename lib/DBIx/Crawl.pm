@@ -274,12 +274,12 @@ sub add_field_replace {
     $self->croak ("Attempt to add field replacement for nonexistent table $table")
         unless $self->keys->{$table};
 
-    $rex = qr(^$rex$);
+    $rex = qr($rex);
 
     if (defined $replace) {
-        my @naked = $replace =~ /\\\$|\$\d+|(\$)/;
+        my @naked = $replace =~ /(\\\$|\$\d+|\$)/g;
         croak 'Bare $ found in replace string, use \$ or $1, $2 etc'
-            if @naked;
+            if grep { $_ eq '$' } @naked;
     };
 
     $self->field_replace->{$table}{$field} = [ $rex, $replace ];
@@ -814,7 +814,10 @@ sub _apply_replace {
         defined $row->{$_} or next;
         my ($rex, $subst) = @{ $replace->{$_} };
         my @match = $row->{$_} =~ $rex or next;
-        # TODO process $1, $2 etc
+        if (defined $subst) {
+            unshift @match, '$';
+            $subst =~ s/\\\$|\$([1-9]\d*)/$match[$1||0]/g;
+        };
         $row->{$_} = $subst;
     };
 };
