@@ -21,6 +21,7 @@ get_options_help (
     "        if filename is given instead, assume SQLite",
     [ "user=s"   => \$conn{user},  "- database user" ],
     [ "pass=s"   => \$conn{pass},  "- database password" ], # TODO read online
+    "See `perldoc $0` for information about config file format",
 );
 
 die "--config is required"
@@ -131,3 +132,168 @@ sub display_usage {
 sub option_to_help {
     return "  --".shift; # TODO
 };
+
+__END__
+
+=head1 NAME
+
+db-crawl.pl - fetch partial database content and print insert statements
+
+=head1 USAGE
+
+    db-crawl.pl [options] --config <config file> [table:field=value] ...
+
+    Options may include
+      --config=s (required) - list of known tables & links
+      --db=s - database to work on
+            database is given as 'mysql:host=...;port=...'
+            if filename is given instead, assume SQLite
+      --user=s - database user
+      --pass=s - database password
+    See `perldoc bin/db-crawl.pl` for information about config file format
+      --help - this message
+
+A config file is required for normal operation.
+
+=head1 CONFIG FILE FORMAT
+
+=head2 COMMENTS
+
+Empty lines and lines starting with a pound (C<#>) are ignored.
+
+=head2 COMMANDS
+
+Each non-empty line must start with an alphanumeric B<command>,
+followed by zero or more B<arguments>.
+
+=head2 ARGUMENTS
+
+An argument must be one of:
+
+=over
+
+=item * an unquoted string containing one or more of C<[A-Za-z0-9_.]>;
+
+=item * a string in double quotes with backslash as escape character;
+
+=item * a here-doc starting with C<E<lt>E<lt>> and a delimiter,
+followed by zero or more lines and said delimiter again
+surrounded by zero or more whitespace characters.
+A delimiter may consist of one or more alphanumeric characters.
+
+=back
+
+=head2 COMMAND LIST
+
+Commands are listed below,
+each with a link to corresponding method in L<DBIx::Crawl>.
+
+=head3 connect C<attribute> C<value>
+
+Specify how database connection is made.
+
+See C<connect> and C<connect_info> attribute.
+
+=head3 on_connect C<perl-code>
+
+Perl code returning a sub to be executed upon connecting to database.
+
+The sub must accept one argument, the database handle.
+
+Strict and warnings are turned on for the code snippet,
+and it is placed into a one-time separate package.
+
+Setting C<unsafe> flag is required to make use of this command.
+
+See C<post_connect_hook>.
+
+=head3 table C<name> C<key-column>, ...
+
+Add a table with corresponding key name(s).
+All tables must be listed before any actions are performed on them.
+
+=head3 link C<table1.field1> C<table2.field2>
+
+Create a link between tables.
+
+This may or may not correspond to actual foreign key in the database.
+
+Each time a C<table1> item with nonempty C<field1> is fetched,
+a query for ALL entries in C<table2> with the same C<field2> value
+is queued.
+
+See C<add_link>.
+
+=head3 link2 C<table1.field1> C<table2.field2>
+
+Like above, but the link is bidirectional.
+
+See C<add_link_both>.
+
+=head3 field_replace C<table.field> C<regexp> [C<replacement>]
+
+If fetched value matches the regular expression, replace it with
+replacement string (or NULL if not present).
+
+C<$1>, C<$2> ... substitutes may be used.
+
+See C<add_field_replace>.
+
+=head3 post_fetch C<table> C<perl-code>
+
+A sub to be executed whenever a row is fetched from table C<table>.
+
+The first argument is the fetched row as hash reference.
+
+See C<add_post_fetch>.
+
+=head3 pre_insert_sql C<script>
+
+SQL commands to be executed before insertion starts,
+within the same transaction.
+
+A command is expected to end in a semicolon.
+No rigorous validation is made though.
+
+See C<add_pre_insert_sql>.
+
+=head3 post_insert_sql C<script>
+
+SQL commands to be executed after insertion is finished,
+within the same transaction.
+
+See C<add_post_insert_sql>.
+
+=head2 EXAMPLE
+
+    # Specify database to connect to
+    connect driver  mysql
+    connect host    database.mycompany.com
+    connect user    readonly
+
+    # Some last-moment amendment
+    on_connect <<PERL
+        sub {
+            my $dbh = shift;
+            $dbh->do("SET NAMES utf8");
+        };
+    PERL
+
+    # Add tables
+    table artist id
+    table album id
+
+    # This one has a composite primary key
+    #     which is usually a bad idea, but we can still handle it
+    table song album_id track_number
+
+    # Setup links
+    link    album.artist_id     artist.id
+    link2   album.id            song.album_id
+
+    pre_insert_sql <<SQL
+        SET NAMES utf8;
+    SQL
+
+=cut
+
