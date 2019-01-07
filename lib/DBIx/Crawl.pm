@@ -38,9 +38,9 @@ Quick summary of what the module does.
 =item C<unsafe> - allow unsafe operations, like execution of user-supplied code
 (default: off)
 
-=item C<post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
+=item C<_post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
 
-=item C<field_replace> - hash with field replacement rules based on regular expressions.
+=item C<_field_replace> - hash with field replacement rules based on regular expressions.
 
 =item C<connect_info> - default values to connect to database
 
@@ -83,10 +83,10 @@ has _cache_select => is => "rw", default => sub { {} };
 
 # table => sub { ... }
 # TODO rename
-has post_fetch_hooks => is => "rw", default => sub { {} };
+has _post_fetch_hooks => is => "rw", default => sub { {} };
 
 # table => field => [ regex, new_value, ... ]
-has field_replace => is => "rw", default => sub { {} };
+has _field_replace => is => "rw", default => sub { {} };
 
 # DDL
 
@@ -242,7 +242,7 @@ Return value is ignored.
 sub add_post_fetch {
     my ($self, $table, $code) = @_;
 
-    $self->post_fetch_hooks->{$table} = $code;
+    $self->_post_fetch_hooks->{$table} = $code;
 };
 
 =head3 add_field_replace( $table, $field, $pattern, $replacement )
@@ -267,7 +267,7 @@ sub add_field_replace {
             if grep { $_ eq '$' } @naked;
     };
 
-    $self->field_replace->{$table}{$field} = [ $rex, $replace ];
+    $self->_field_replace->{$table}{$field} = [ $rex, $replace ];
 };
 
 =head3 add_pre_insert_sql
@@ -781,8 +781,8 @@ sub fetch_one {
     $sth->execute(@args);
 
     my @ret;
-    my $hook = $self->post_fetch_hooks->{$table};
-    my $replace = $self->field_replace->{$table};
+    my $hook = $self->_post_fetch_hooks->{$table};
+    my $replace = $self->_field_replace->{$table};
     while (my $row = $sth->fetchrow_hashref) {
         _apply_replace( $row, $replace );
         $hook->($row) if $hook;

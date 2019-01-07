@@ -81,9 +81,9 @@ lives_ok {
 CONF
 };
 
-is ref $slice->post_fetch_hooks->{customer}, 'CODE', "A sub was inserted";
+is ref $slice->_post_fetch_hooks->{customer}, 'CODE', "A sub was inserted";
 
-note explain $slice->post_fetch_hooks;
+note explain $slice->_post_fetch_hooks;
 
 done_testing;
 

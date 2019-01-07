@@ -29,7 +29,7 @@ lives_ok {
     $crawl->read_config(make_fd($conf));
 } "unsafe set => ok";
 
-my $hook = $crawl->post_fetch_hooks->{minimal};
+my $hook = $crawl->_post_fetch_hooks->{minimal};
 is ref $hook, 'CODE', "hooks created";
 
 my $data = { id => 42 };
