@@ -31,20 +31,214 @@ Quick summary of what the module does.
     # store data
     $slice->insert( $dbh_test );
 
-=head1 ATTRIBUTES
+=cut
+
+=head1 CONFIG FILE FORMAT
+
+L<DBIx::Crawl> comes with a configuration language.
+See L</read_config> for how it is parsed.
+
+=head2 COMMENTS
+
+All empty lines and lines starting with C<#> as ignored.
+
+=head2 COMMANDS
+
+Each meaningful line starts with a B<command>.
+
+A command is followed by one or more B<arguments>.
+
+Each argument may be an unquoted alphanumeric string (dots allowed),
+a string in double quotes (use a backslash to escape quotes and backslashes),
+or a here-doc starting with C<E<lt>E<lt>>.
+
+Commands are listed below,
+each with a link to corresponding method in L<DBIx::Crawl>.
+
+=head3 connect C<attribute> C<value>
+
+Specify how database connection is made.
+
+See C<connect> and C<connect_info> attribute.
+
+=head3 on_connect C<perl-code>
+
+Perl code returning a sub to be executed upon connecting to database.
+
+The sub must accept one argument, the database handle.
+
+Strict and warnings are turned on for the code snippet,
+and it is placed into a one-time separate package.
+
+Setting C<unsafe> flag is required to make use of this command.
+
+See C<post_connect_hook>.
+
+=head3 table C<name> C<key-column>, ...
+
+Add a table with corresponding key name(s).
+All tables must be listed before any actions are performed on them.
+
+=head3 link C<table1.field1> C<table2.field2>
+
+Create a link between tables.
+
+This may or may not correspond to actual foreign key in the database.
+
+Each time a C<table1> item with nonempty C<field1> is fetched,
+a query for ALL entries in C<table2> with the same C<field2> value
+is queued.
+
+See C<add_link>.
+
+=head3 link2 C<table1.field1> C<table2.field2>
+
+Like above, but the link is bidirectional.
+
+See C<add_link_both>.
+
+=head3 field_replace C<table.field> C<regexp> [C<replacement>]
+
+If fetched value matches the regular expression, replace it with
+replacement string (or NULL if not present).
+
+C<$1>, C<$2> ... substitutes may be used.
+
+See C<add_field_replace>.
+
+=head3 post_fetch C<table> C<perl-code>
+
+A sub to be executed whenever a row is fetched from table C<table>.
+
+The first argument is the fetched row as hash reference.
+
+See C<add_post_fetch>.
+
+=head3 pre_insert_sql C<script>
+
+SQL commands to be executed before insertion starts,
+within the same transaction.
+
+A command is expected to end in a semicolon.
+No rigorous validation is made though.
+
+See C<add_pre_insert_sql>.
+
+=head3 post_insert_sql C<script>
+
+SQL commands to be executed after insertion is finished,
+within the same transaction.
+
+See C<add_post_insert_sql>.
+
+=head2 EXAMPLE
+
+    # Specify database to connect to
+    connect driver  mysql
+    connect host    database.mycompany.com
+    connect user    readonly
+
+    # Some last-moment amendment
+    on_connect <<PERL
+        sub {
+            my $dbh = shift;
+            $dbh->do("SET NAMES utf8");
+        };
+    PERL
+
+    # Add tables
+    table artist id
+    table album id
+
+    # This one has a composite primary key
+    #     which is usually a bad idea, but we can still handle it
+    table song album_id track_number
+
+    # Setup links
+    link    album.artist_id     artist.id
+    link2   album.id            song.album_id
+
+    pre_insert_sql <<SQL
+        SET NAMES utf8;
+    SQL
+
+=cut
+
+my %command_spec = (
+    connect => {
+        method => sub {
+            my ($self, $field, $value) = @_;
+            $self->connect_info->{$field} = $value
+        },
+        min    => 2,
+        max    => 2,
+    },
+    table => {
+        method => "add_table",
+        min    => 2,
+    },
+    link  => {
+        method => "add_link",
+        min    => 2,
+        max    => 2,
+        args   => \&_args_link,
+    },
+    link2 => {
+        method => "add_link_both",
+        min    => 2,
+        max    => 2,
+        args   => \&_args_link,
+    },
+    post_fetch => {
+        method => 'add_post_fetch',
+        min    => 2,
+        max    => 2,
+        unsafe => 1,
+        args   => sub {
+            my ($where, $table, $code) = @_;
+            return ($table, _compile_hook($where, $code));
+        },
+    },
+    on_connect => {
+        method => 'post_connect_hook',
+        min    => 1,
+        max    => 1,
+        unsafe => 1,
+        args   => \&_compile_hook,
+    },
+    pre_insert_sql => {
+        method => 'add_pre_insert_sql',
+        min => 1,
+        max => 1,
+    },
+    post_insert_sql => {
+        method => 'add_post_insert_sql',
+        min => 1,
+        max => 1,
+    },
+    field_replace => {
+        method => 'add_field_replace',
+        min => 2,
+        max => 3,
+        args => sub {
+            my ($where, $field, @rest) = @_;
+            return _split_field( $field ), @rest;
+        },
+    },
+);
+
+
+=head1 PUBLIC API
+
+=head2 ATTRIBUTES
 
 =over
 
 =item C<unsafe> - allow unsafe operations, like execution of user-supplied code
 (default: off)
 
-=item C<_post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
-
-=item C<_field_replace> - hash with field replacement rules based on regular expressions.
-
-=item C<connect_info> - default values to connect to database
-
-=item C<dbh> - database connection to be used for fetching/storing data.
+=item C<connect_info> - hash describing how to connect to database.
+See L</connect>.
 
 =item C<post_connect_hook> - execute this code on database handle upon connection.
 
@@ -88,15 +282,9 @@ has _post_fetch_hooks => is => "rw", default => sub { {} };
 # table => field => [ regex, new_value, ... ]
 has _field_replace => is => "rw", default => sub { {} };
 
-=head1 CONFIG FORMAT
+=head2 CONFIG FILE FORMAT
 
-See L</read_config> for how configuration file is read and applied.
 
-=head1 PUBLIC API
-
-As of current, cache, DBI layer, and database structure class are all mixed
-together.
-This may or may not change in the future.
 
 =head2 HIGH-LEVEL SETUP
 
@@ -265,68 +453,6 @@ Read configuration file. Docs TBD.
 
 =cut
 
-my %command_spec = (
-    connect => {
-        method => sub {
-            my ($self, $field, $value) = @_;
-            $self->connect_info->{$field} = $value
-        },
-        min    => 2,
-        max    => 2,
-    },
-    table => {
-        method => "add_table",
-        min    => 2,
-    },
-    link  => {
-        method => "add_link",
-        min    => 2,
-        max    => 2,
-        args   => \&_args_link,
-    },
-    link2 => {
-        method => "add_link_both",
-        min    => 2,
-        max    => 2,
-        args   => \&_args_link,
-    },
-    post_fetch => {
-        method => 'add_post_fetch',
-        min    => 2,
-        max    => 2,
-        unsafe => 1,
-        args   => sub {
-            my ($where, $table, $code) = @_;
-            return ($table, _compile_hook($where, $code));
-        },
-    },
-    on_connect => {
-        method => 'post_connect_hook',
-        min    => 1,
-        max    => 1,
-        unsafe => 1,
-        args   => \&_compile_hook,
-    },
-    pre_insert_sql => {
-        method => 'add_pre_insert_sql',
-        min => 1,
-        max => 1,
-    },
-    post_insert_sql => {
-        method => 'add_post_insert_sql',
-        min => 1,
-        max => 1,
-    },
-    field_replace => {
-        method => 'add_field_replace',
-        min => 2,
-        max => 3,
-        args => sub {
-            my ($where, $field, @rest) = @_;
-            return _split_field( $field ), @rest;
-        },
-    },
-);
 
 my $re_arg = qr([\w\.]+|"(?:[^"]+|\\")*"|<<\w+);
 
