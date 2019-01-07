@@ -33,134 +33,70 @@ Quick summary of what the module does.
 
 =cut
 
-=head1 CONFIG FILE FORMAT
+=head1 PUBLIC API
 
-L<DBIx::Crawl> comes with a configuration language.
-See L</read_config> for how it is parsed.
+=head2 CONSTRUCTOR & ATTRIBUTES
 
-=head2 COMMENTS
+=head3 new
 
-All empty lines and lines starting with C<#> as ignored.
+Creates a L<DBIx::Crawl> instance.
 
-=head2 COMMANDS
+Options may include:
 
-Each meaningful line starts with a B<command>.
+=over
 
-A command is followed by one or more B<arguments>.
+=item C<unsafe> - allow unsafe operations, like execution of user-supplied code
+(default: off)
 
-Each argument may be an unquoted alphanumeric string (dots allowed),
-a string in double quotes (use a backslash to escape quotes and backslashes),
-or a here-doc starting with C<E<lt>E<lt>>.
+=item C<connect_info> - hash describing how to connect to database.
+See L</connect>.
 
-Commands are listed below,
-each with a link to corresponding method in L<DBIx::Crawl>.
+=item C<post_connect_hook> - execute this code on database handle upon connection.
 
-=head3 connect C<attribute> C<value>
+=back
 
-Specify how database connection is made.
+=cut
 
-See C<connect> and C<connect_info> attribute.
+use Carp;
+use Log::Any qw($log);
+use Moo;
 
-=head3 on_connect C<perl-code>
+# field => value, e.g. port, host, user ...
+has connect_info => is => "rw", default => sub { {} };
 
-Perl code returning a sub to be executed upon connecting to database.
+has dbh => is => "rw";
+has _dbh_allow_write => is => "rw" => default => sub { 0 };
+has post_connect_hook => is => "rw";
 
-The sub must accept one argument, the database handle.
+has _pre_insert_sql    => is => "rw", default => sub { [] };
+has _post_insert_sql   => is => "rw", default => sub { [] };
 
-Strict and warnings are turned on for the code snippet,
-and it is placed into a one-time separate package.
+# Allow execution of client code
+has unsafe => is => "rw", default => sub { 0 };
 
-Setting C<unsafe> flag is required to make use of this command.
+# table => [ field, ... ]
+has _table_keys   => is => "rw", default => sub { {} };
 
-See C<post_connect_hook>.
+# table => field => [ table : field, ... ]
+has _table_links  => is => "rw", default => sub { {} };
 
-=head3 table C<name> C<key-column>, ...
+# table => { key => {record}, ... }
+has _cache_pk   => is => "rw", default => sub { {} };
 
-Add a table with corresponding key name(s).
-All tables must be listed before any actions are performed on them.
+# table => 'keypair' => 'valuepair'
+has _cache_select => is => "rw", default => sub { {} };
 
-=head3 link C<table1.field1> C<table2.field2>
+# table => sub { ... }
+has _post_fetch_hooks => is => "rw", default => sub { {} };
 
-Create a link between tables.
+# table => field => [ regex, new_value, ... ]
+has _field_replace => is => "rw", default => sub { {} };
 
-This may or may not correspond to actual foreign key in the database.
+=head2 CONFIG FILE
 
-Each time a C<table1> item with nonempty C<field1> is fetched,
-a query for ALL entries in C<table2> with the same C<field2> value
-is queued.
+=head3 read_config( $file_handle || $scalar_ref, [$file_name] )
 
-See C<add_link>.
-
-=head3 link2 C<table1.field1> C<table2.field2>
-
-Like above, but the link is bidirectional.
-
-See C<add_link_both>.
-
-=head3 field_replace C<table.field> C<regexp> [C<replacement>]
-
-If fetched value matches the regular expression, replace it with
-replacement string (or NULL if not present).
-
-C<$1>, C<$2> ... substitutes may be used.
-
-See C<add_field_replace>.
-
-=head3 post_fetch C<table> C<perl-code>
-
-A sub to be executed whenever a row is fetched from table C<table>.
-
-The first argument is the fetched row as hash reference.
-
-See C<add_post_fetch>.
-
-=head3 pre_insert_sql C<script>
-
-SQL commands to be executed before insertion starts,
-within the same transaction.
-
-A command is expected to end in a semicolon.
-No rigorous validation is made though.
-
-See C<add_pre_insert_sql>.
-
-=head3 post_insert_sql C<script>
-
-SQL commands to be executed after insertion is finished,
-within the same transaction.
-
-See C<add_post_insert_sql>.
-
-=head2 EXAMPLE
-
-    # Specify database to connect to
-    connect driver  mysql
-    connect host    database.mycompany.com
-    connect user    readonly
-
-    # Some last-moment amendment
-    on_connect <<PERL
-        sub {
-            my $dbh = shift;
-            $dbh->do("SET NAMES utf8");
-        };
-    PERL
-
-    # Add tables
-    table artist id
-    table album id
-
-    # This one has a composite primary key
-    #     which is usually a bad idea, but we can still handle it
-    table song album_id track_number
-
-    # Setup links
-    link    album.artist_id     artist.id
-    link2   album.id            song.album_id
-
-    pre_insert_sql <<SQL
-        SET NAMES utf8;
-    SQL
+Read configuration from file or scalar.
 
 =cut
 
@@ -227,66 +163,154 @@ my %command_spec = (
     },
 );
 
+my $re_arg = qr([\w\.]+|"(?:[^"]+|\\")*"|<<\w+);
 
-=head1 PUBLIC API
+sub read_config {
+    my ($self, $fd, $fname) = @_;
 
-=head2 ATTRIBUTES
+    if (ref $fd eq 'SCALAR') {
+        open my $fdcopy, "<", $fd
+            or croak "Failed to mmap scalar $fd: $!";
+        $fd = $fdcopy;
+    };
 
-=over
+    $fname ||= '<INPUT>';
 
-=item C<unsafe> - allow unsafe operations, like execution of user-supplied code
-(default: off)
+    my $line; # global because we want to die at appropriate place
+    eval {
+        my @todo;
+        my @raw_cmd = _tokenize_file($fd, \$line);
 
-=item C<connect_info> - hash describing how to connect to database.
-See L</connect>.
+        foreach my $found (@raw_cmd) {
+            ($line, my ($command, $extra, @args)) = @$found;
 
-=item C<post_connect_hook> - execute this code on database handle upon connection.
+            my $spec = $command_spec{$command};
 
-=back
+            die "unknown command '$command'"
+                unless $spec;
 
-=cut
+            die "wrong number of arguments for '$command'"
+                unless @args >= ($spec->{min} // 0) and @args <= ($spec->{max} // 9**9**9);
 
-use Carp;
-use Log::Any qw($log);
-use Moo;
-
-# field => value, e.g. port, host, user ...
-has connect_info => is => "rw", default => sub { {} };
-
-has dbh => is => "rw";
-has _dbh_allow_write => is => "rw" => default => sub { 0 };
-has post_connect_hook => is => "rw";
-
-has _pre_insert_sql    => is => "rw", default => sub { [] };
-has _post_insert_sql   => is => "rw", default => sub { [] };
-
-# Allow execution of client code
-has unsafe => is => "rw", default => sub { 0 };
-
-# table => [ field, ... ]
-has _table_keys   => is => "rw", default => sub { {} };
-
-# table => field => [ table : field, ... ]
-has _table_links  => is => "rw", default => sub { {} };
-
-# table => { key => {record}, ... }
-has _cache_pk   => is => "rw", default => sub { {} };
-
-# table => 'keypair' => 'valuepair'
-has _cache_select => is => "rw", default => sub { {} };
-
-# table => sub { ... }
-# TODO rename
-has _post_fetch_hooks => is => "rw", default => sub { {} };
-
-# table => field => [ regex, new_value, ... ]
-has _field_replace => is => "rw", default => sub { {} };
-
-=head2 CONFIG FILE FORMAT
+            die "command '$command' is unsafe, but unsafe mode not turned on"
+                if $spec->{unsafe} and not $self->unsafe;
 
 
+            @args = $spec->{args}->([$fname, $line], @args)
+                if $spec->{args};
 
-=head2 HIGH-LEVEL SETUP
+            push @todo, [ $line, $spec->{method}, @args ];
+        };
+
+        # ok, the file was read...
+        foreach my $cmd (@todo) {
+            ($line, my( $method, @rest )) = @$cmd;
+            $self->$method( @rest );
+        };
+        1;
+    } || do {
+        my $err = $@;
+        # die with config file line:number and not calling code
+        $err =~ s/ +at .*? line \d+\.?\n?$//s;
+        $err .= " in $fname line $line\n";
+        die $err;
+    };
+
+    # all folks
+    return $self;
+};
+
+# in:  $filehandle, $ref_to_line_number
+# out: [ line, command, \%opts, @args ], ...
+sub _tokenize_file {
+    my ($fd, $line) = @_;
+
+    my @out;
+    while (<$fd>) {
+        $$line++;
+        # comment
+        /\S/ or next;
+        /^\s*#/ and next;
+
+        /^\s*(\w+)((?:\s+$re_arg)*)(?:\s+(\{.*\}))?\s*$/
+            or die "Bad line format: $_";
+
+        my ($command, $allargs, $opt) = ($1, $2, $3);
+
+        # TODO decode opt
+        die "options not available for '$command'"
+            if $opt;
+
+        my @args;
+        ARG: foreach ($allargs =~ /($re_arg)/g) {
+            if (/^<<(\w+)$/) {
+                # slurp part of file, adjust line
+                my $eof = $1;
+                my $rex = qr(\s*\Q$eof\E\s*$);
+                my @parts;
+                while (<$fd>) {
+                    if ($_ =~ $rex) {
+                        push @args, join '', @parts;
+                        next ARG;
+                    }
+                    push @parts, $_;
+                };
+                die "runaway argument - could not find a $eof until end of file";
+            } else {
+                push @args, _unquote($_);
+            };
+        };
+
+        push @out, [ $$line, $command, undef, @args ];
+    };
+
+    return @out;
+};
+
+my %unquote_replace = ( n => "\n" );
+sub _unquote {
+    my $str = shift;
+
+    return $str if $str =~ /^[\w\.]+$/;
+
+    if ( $str =~ s/^"// and $str =~ s/"$// ) {
+        $str =~ s/\\(.)/$unquote_replace{$1} || $1/ge;
+        return $str;
+    };
+
+    confess "Bug in ".__PACKAGE__.", cannot unquote line: '$str'";
+};
+
+my $pkg_id;
+sub _compile_hook {
+    my ($where, $content) = @_;
+
+    my $package = __PACKAGE__."::__ANON__::".++$pkg_id;
+    my ($file, $line) = @$where;
+    my $coderef = eval ## no critic
+    qq{
+        package $package;
+        use strict;
+        use warnings;\n# line $line $file
+        sub {\n$content };
+    };
+    croak "Compilation of user supplied code failed: $@"
+        unless $coderef;
+
+    return $coderef;
+};
+
+sub _args_link {
+    my ($where, $from, $to) = @_;
+    return _split_field( $from ), $to =~ /^\w+$/ ? ($to) : _split_field($to);
+};
+
+sub _split_field {
+    my $str = shift;
+    $str =~ /^(\w+)\.(\w+)$/
+        or die ("Argument must be in table.field form, not '$str'");
+    return ($1, $2);
+};
 
 =head2 DDL METHODS
 
@@ -445,162 +469,6 @@ sub add_post_insert_sql {
         or croak "SQL must end in a semicolon(;) and optionally a comment";
 
     push @{ $self->_post_insert_sql }, $sql;
-};
-
-=head3 read_config( $file_handle )
-
-Read configuration file. Docs TBD.
-
-=cut
-
-
-my $re_arg = qr([\w\.]+|"(?:[^"]+|\\")*"|<<\w+);
-
-sub read_config {
-    my ($self, $fd, $fname) = @_;
-
-    if (ref $fd eq 'SCALAR') {
-        open my $fdcopy, "<", $fd
-            or croak "Failed to mmap scalar $fd: $!";
-        $fd = $fdcopy;
-    };
-
-    $fname ||= '<INPUT>';
-
-    my $line; # global because we want to die at appropriate place
-    eval {
-        my @todo;
-        my @raw_cmd = _tokenize_file($fd, \$line);
-
-        foreach my $found (@raw_cmd) {
-            ($line, my ($command, $extra, @args)) = @$found;
-
-            my $spec = $command_spec{$command};
-
-            die "unknown command '$command'"
-                unless $spec;
-
-            die "wrong number of arguments for '$command'"
-                unless @args >= ($spec->{min} // 0) and @args <= ($spec->{max} // 9**9**9);
-
-            die "command '$command' is unsafe, but unsafe mode not turned on"
-                if $spec->{unsafe} and not $self->unsafe;
-
-
-            @args = $spec->{args}->([$fname, $line], @args)
-                if $spec->{args};
-
-            push @todo, [ $line, $spec->{method}, @args ];
-        };
-
-        # ok, the file was read...
-        foreach my $cmd (@todo) {
-            ($line, my( $method, @rest )) = @$cmd;
-            $self->$method( @rest );
-        };
-        1;
-    } || do {
-        my $err = $@;
-        # die with config file line:number and not calling code
-        $err =~ s/ +at .*? line \d+\.?\n?$//s;
-        $err .= " in $fname line $line\n";
-        die $err;
-    };
-
-    # all folks
-    return $self;
-};
-
-# in:  $filehandle, $ref_to_line_number
-# out: [ line, command, \%opts, @args ], ...
-sub _tokenize_file {
-    my ($fd, $line) = @_;
-
-    my @out;
-    while (<$fd>) {
-        $$line++;
-        # comment
-        /\S/ or next;
-        /^\s*#/ and next;
-
-        /^\s*(\w+)((?:\s+$re_arg)*)(?:\s+(\{.*\}))?\s*$/
-            or die "Bad line format: $_";
-
-        my ($command, $allargs, $opt) = ($1, $2, $3);
-
-        # TODO decode opt
-        die "options not available for '$command'"
-            if $opt;
-
-        my @args;
-        ARG: foreach ($allargs =~ /($re_arg)/g) {
-            if (/^<<(\w+)$/) {
-                # slurp part of file, adjust line
-                my $eof = $1;
-                my $rex = qr(\s*\Q$eof\E\s*$);
-                my @parts;
-                while (<$fd>) {
-                    if ($_ =~ $rex) {
-                        push @args, join '', @parts;
-                        next ARG;
-                    }
-                    push @parts, $_;
-                };
-                die "runaway argument - could not find a $eof until end of file";
-            } else {
-                push @args, _unquote($_);
-            };
-        };
-
-        push @out, [ $$line, $command, undef, @args ];
-    };
-
-    return @out;
-};
-
-my %unquote_replace = ( n => "\n" );
-sub _unquote {
-    my $str = shift;
-
-    return $str if $str =~ /^[\w\.]+$/;
-
-    if ( $str =~ s/^"// and $str =~ s/"$// ) {
-        $str =~ s/\\(.)/$unquote_replace{$1} || $1/ge;
-        return $str;
-    };
-
-    confess "Bug in ".__PACKAGE__.", cannot unquote line: '$str'";
-};
-
-my $pkg_id;
-sub _compile_hook {
-    my ($where, $content) = @_;
-
-    my $package = __PACKAGE__."::__ANON__::".++$pkg_id;
-    my ($file, $line) = @$where;
-    my $coderef = eval ## no critic
-    qq{
-        package $package;
-        use strict;
-        use warnings;\n# line $line $file
-        sub {\n$content };
-    };
-    croak "Compilation of user supplied code failed: $@"
-        unless $coderef;
-
-    return $coderef;
-};
-
-sub _args_link {
-    my ($where, $from, $to) = @_;
-    return _split_field( $from ), $to =~ /^\w+$/ ? ($to) : _split_field($to);
-};
-
-sub _split_field {
-    my $str = shift;
-    $str =~ /^(\w+)\.(\w+)$/
-        or die ("Argument must be in table.field form, not '$str'");
-    return ($1, $2);
 };
 
 =head2 DDL QUERYING
