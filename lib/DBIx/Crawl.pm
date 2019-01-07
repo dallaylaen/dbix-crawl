@@ -88,7 +88,9 @@ has _post_fetch_hooks => is => "rw", default => sub { {} };
 # table => field => [ regex, new_value, ... ]
 has _field_replace => is => "rw", default => sub { {} };
 
-# DDL
+=head1 CONFIG FORMAT
+
+See L</read_config> for how configuration file is read and applied.
 
 =head1 PUBLIC API
 
@@ -97,61 +99,6 @@ together.
 This may or may not change in the future.
 
 =head2 HIGH-LEVEL SETUP
-
-=head3 connect( %options )
-
-Connect to a database, or use existing connection.
-
-Options may include:
-
-=over
-
-=back
-
-=cut
-
-sub connect {
-    my ($self, %opt) = @_;
-
-    # first and foremost, the special options
-    my $rw  = delete $opt{rw};
-    my $dbh = delete $opt{dbh};
-
-    if (!$dbh) {
-        # if we've read anything from config, assume it as default
-        defined $opt{$_} or delete $opt{$_}
-            for keys %opt;
-        my $default = $self->connect_info;
-        %opt = ( %$default, %opt );
-
-        my $driver = delete $opt{driver};
-        my $user   = delete $opt{user};
-        my $pass   = delete $opt{pass};
-        my $extra  = delete $opt{extra} || {};
-        $extra = { RaiseError => 1, %$extra };
-
-        my $dbi    = delete $opt{dbi};
-        croak "don't know where to connect to - either dbh, dbi, or driver must be set"
-            unless $dbi || $driver;
-
-        $dbi     ||= "$driver:".join ";",
-            map { "$_=$opt{$_}" } grep { defined $opt{$_} } keys %opt;
-
-        $dbi = "dbi:$dbi" unless $dbi =~ /^dbi:/;
-
-        require DBI;
-        $dbh = DBI->connect($dbi, $user, $pass, $extra);
-
-        if (my $code = $self->post_connect_hook) {
-            $code->($dbh);
-        };
-    };
-
-    $self->dbh( $dbh );
-    $self->_dbh_allow_write( $rw ? 1 : 0 );
-
-    return $self;
-};
 
 =head2 DDL METHODS
 
@@ -722,6 +669,83 @@ sub _value2sql {
 };
 
 =head2 DATABASE CONNECTION METHODS
+
+=head3 connect( %options )
+
+Connect to a database for fetching/inserting actual data.
+
+Options may include:
+
+=over
+
+=item C<dbh> - an existing database handle;
+
+=item C<rw> - allow inserts (default: 0);
+
+=item C<dbi> - an existing database connection string;
+
+=item C<user> - user name to connect to database;
+
+=item C<pass> - password to connect to database;
+
+=item C<extra> - a hash with extra options,
+by default only C<{ RaiseError =E<gt> 1 }> is passed.
+
+=item C<driver> - name of the DBI driver to use.
+
+=back
+
+One of C<dbh>, C<dbi>, or C<driver> MUST be present.
+
+The rest is mixed with content of C<connect_info> and joined into a DBI
+connection string, if only a database handle wasn't provided first.
+
+See L<DBI> for how connection is made.
+
+=cut
+
+sub connect {
+    my ($self, %opt) = @_;
+
+    # first and foremost, the special options
+    my $rw  = delete $opt{rw};
+    my $dbh = delete $opt{dbh};
+
+    if (!$dbh) {
+        # if we've read anything from config, assume it as default
+        defined $opt{$_} or delete $opt{$_}
+            for keys %opt;
+        my $default = $self->connect_info;
+        %opt = ( %$default, %opt );
+
+        my $driver = delete $opt{driver};
+        my $user   = delete $opt{user};
+        my $pass   = delete $opt{pass};
+        my $extra  = delete $opt{extra} || {};
+        $extra = { RaiseError => 1, %$extra };
+
+        my $dbi    = delete $opt{dbi};
+        croak "don't know where to connect to - either dbh, dbi, or driver must be set"
+            unless $dbi || $driver;
+
+        $dbi     ||= "$driver:".join ";",
+            map { "$_=$opt{$_}" } grep { defined $opt{$_} } keys %opt;
+
+        $dbi = "dbi:$dbi" unless $dbi =~ /^dbi:/;
+
+        require DBI;
+        $dbh = DBI->connect($dbi, $user, $pass, $extra);
+
+        if (my $code = $self->post_connect_hook) {
+            $code->($dbh);
+        };
+    };
+
+    $self->dbh( $dbh );
+    $self->_dbh_allow_write( $rw ? 1 : 0 );
+
+    return $self;
+};
 
 =head3 fetch( @list )
 
