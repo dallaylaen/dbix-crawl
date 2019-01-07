@@ -92,11 +92,61 @@ has _post_fetch_hooks => is => "rw", default => sub { {} };
 # table => field => [ regex, new_value, ... ]
 has _field_replace => is => "rw", default => sub { {} };
 
-=head2 CONFIG FILE
+=head2 CONFIGURATION FILE
 
 =head3 read_config( $file_handle || $scalar_ref, [$file_name] )
 
 Read configuration from file or scalar.
+
+=head3 COMMENTS
+
+Empty lines and lines starting with a pound (C<#>) are ignored.
+
+=head3 COMMANDS
+
+Each non-empty line must start with an alphanumeric B<command>,
+followed by zero or more B<arguments>.
+
+=head3 ARGUMENTS
+
+An argument must be one of:
+
+=over
+
+=item * an unquoted string containing one or more of C<[A-Za-z0-9_.]>;
+
+=item * a string in double quotes with backslash as escape character;
+
+=item * a here-doc starting with C<E<lt>E<lt>> and a delimiter,
+followed by zero or more lines and said delimiter again
+surrounded by zero or more whitespace characters.
+A delimiter may consist of one or more alphanumeric characters.
+
+=back
+
+=head3 LIST OF COMMANDS
+
+=over
+
+=item connect C<parameter> C<value>
+
+=item on_connect C<perl-code>
+
+=item table C<name> C<key-field> ...
+
+=item link C<table1.field1> C<table2.field2>
+
+=item link2 C<table1.field1> C<table2.field2>
+
+=item field_replace C<table.field> C<regexp> [C<replacement>]
+
+=item post_fetch C<table> C<perl-code>
+
+=item pre_insert_sql C<sql>
+
+=item post_insert_sql C<sql>
+
+=back
 
 =cut
 
