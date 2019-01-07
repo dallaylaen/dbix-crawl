@@ -21,6 +21,7 @@ get_options_help (
     "        if filename is given instead, assume SQLite",
     [ "user=s"   => \$conn{user},  "- database user" ],
     [ "pass=s"   => \$conn{pass},  "- database password" ], # TODO read online
+    [ "help"     => \&display_usage, "- this message" ],
     "See `perldoc $0` for information about config file format",
 );
 
@@ -106,7 +107,7 @@ sub get_options_help {
         };
     };
 
-    GetOptions( help => \&display_usage, @opt )
+    GetOptions( @opt )
         or die "Bad options. See $0 --help";
 };
 
@@ -125,7 +126,7 @@ sub display_usage {
         };
     };
 
-    print join "\n", @help_clear, "  --help - this message", "";
+    print join "\n", @help_clear, "";
     exit $status if defined $status;
 };
 
@@ -150,7 +151,6 @@ db-crawl.pl - fetch partial database content and print insert statements
             if filename is given instead, assume SQLite
       --user=s - database user
       --pass=s - database password
-    See `perldoc bin/db-crawl.pl` for information about config file format
       --help - this message
 
 A config file is required for normal operation.
