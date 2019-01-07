@@ -38,8 +38,6 @@ Quick summary of what the module does.
 =item C<unsafe> - allow unsafe operations, like execution of user-supplied code
 (default: off)
 
-=item C<seen> - fetched data search cache to avoid looping or checking out data twice.
-
 =item C<post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
 
 =item C<field_replace> - hash with field replacement rules based on regular expressions.
@@ -78,10 +76,10 @@ has _table_keys   => is => "rw", default => sub { {} };
 has _table_links  => is => "rw", default => sub { {} };
 
 # table => { key => {record}, ... }
-has _table_cache   => is => "rw", default => sub { {} };
+has _cache_pk   => is => "rw", default => sub { {} };
 
 # table => 'keypair' => 'valuepair'
-has seen => is => "rw", default => sub { {} };
+has _cache_select => is => "rw", default => sub { {} };
 
 # table => sub { ... }
 # TODO rename
@@ -632,8 +630,8 @@ Remove cache.
 
 sub clear {
     my $self = shift;
-    $self->_table_cache({});
-    $self->seen({});
+    $self->_cache_pk({});
+    $self->_cache_select({});
     return $self;
 };
 
@@ -648,7 +646,7 @@ sub is_seen {
 
     my ($key, $value) = $self->make_key( $data );
 
-    return $self->seen->{$table}{$key}{$value};
+    return $self->_cache_select->{$table}{$key}{$value};
 };
 
 =head3 mark_seen( table => \%key )
@@ -662,7 +660,7 @@ sub mark_seen {
 
     my ($key, $value) = $self->make_key( $data );
 
-    return $self->seen->{$table}{$key}{$value}++;
+    return $self->_cache_select->{$table}{$key}{$value}++;
 };
 
 =head3 add_data
@@ -679,7 +677,7 @@ sub add_data {
 
     my (undef, $key) = $self->make_primary_key( $table, $data );
 
-    $self->_table_cache->{$table}{$key} = $data;
+    $self->_cache_pk->{$table}{$key} = $data;
     return $self;
 };
 
@@ -695,7 +693,7 @@ sub get_insert_script {
 
     # TODO %opt unused
 
-    my $all = $self->_table_cache;
+    my $all = $self->_cache_pk;
 
     my @work;
 
@@ -819,7 +817,7 @@ sub insert {
     my ($self) = @_;
 
     $self->_rw_check;
-    my $data = $self->_table_cache;
+    my $data = $self->_cache_pk;
 
     my @todo;
     foreach my $table( keys %$data ) {
