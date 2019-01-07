@@ -38,12 +38,6 @@ Quick summary of what the module does.
 =item C<unsafe> - allow unsafe operations, like execution of user-supplied code
 (default: off)
 
-=item C<keys> - table to primary key hash
-
-=item C<links> - foreign key hash
-
-=item C<data> - fetched data cache based on primary key
-
 =item C<seen> - fetched data search cache to avoid looping or checking out data twice.
 
 =item C<post_fetch_hooks> - per-table post-fetch processing, like removing passwords etc.
@@ -54,14 +48,7 @@ Quick summary of what the module does.
 
 =item C<dbh> - database connection to be used for fetching/storing data.
 
-=item C<dbh_allow_write> - unless set, all attempts to write to database will fail.
-
 =item C<post_connect_hook> - execute this code on database handle upon connection.
-
-=item C<pre_insert_sql> - command(s) to be executed on insert transaction start.
-
-=item C<post_insert_sql> - command(s) to be executed on insert transaction end.
-
 
 =back
 
@@ -75,23 +62,23 @@ use Moo;
 has connect_info => is => "rw", default => sub { {} };
 
 has dbh => is => "rw";
-has dbh_allow_write => is => "rw" => default => sub { 0 };
+has _dbh_allow_write => is => "rw" => default => sub { 0 };
 has post_connect_hook => is => "rw";
 
-has pre_insert_sql    => is => "rw", default => sub { [] };
-has post_insert_sql   => is => "rw", default => sub { [] };
+has _pre_insert_sql    => is => "rw", default => sub { [] };
+has _post_insert_sql   => is => "rw", default => sub { [] };
 
 # Allow execution of client code
 has unsafe => is => "rw", default => sub { 0 };
 
 # table => [ field, ... ]
-has keys   => is => "rw", default => sub { {} };
+has _table_keys   => is => "rw", default => sub { {} };
 
 # table => field => [ table : field, ... ]
-has links  => is => "rw", default => sub { {} };
+has _table_links  => is => "rw", default => sub { {} };
 
-# table => [ {record}, ... ]
-has data   => is => "rw", default => sub { {} };
+# table => { key => {record}, ... }
+has _table_cache   => is => "rw", default => sub { {} };
 
 # table => 'keypair' => 'valuepair'
 has seen => is => "rw", default => sub { {} };
@@ -163,7 +150,7 @@ sub connect {
     };
 
     $self->dbh( $dbh );
-    $self->dbh_allow_write( $rw ? 1 : 0 );
+    $self->_dbh_allow_write( $rw ? 1 : 0 );
 
     return $self;
 };
@@ -184,7 +171,7 @@ Add a table to known table list, add a primary key.
 sub add_table {
     my ($self, $table, @key) = @_;
 
-    $self->keys->{$table} = \@key;
+    $self->_table_keys->{$table} = \@key;
 };
 
 =head3 add_link
@@ -211,13 +198,13 @@ sub add_link {
     my ($self, $table, $fk, $ref, $pk) = @_;
 
     croak "Cannot add link from unknown table '$table'"
-        unless $self->keys->{$table};
+        unless $self->_table_keys->{$table};
     croak "Cannot add link to unknown table '$ref'"
-        unless $self->keys->{$ref};
+        unless $self->_table_keys->{$ref};
 
-    $pk ||= $self->keys->{$ref}[0];
+    $pk ||= $self->_table_keys->{$ref}[0];
 
-    $self->links->{$table}{$fk}{$ref.'.'.$pk}++;
+    $self->_table_links->{$table}{$fk}{$ref.'.'.$pk}++;
     return $self;
 };
 
@@ -230,7 +217,7 @@ Adds a bidirectional link.
 sub add_link_both {
     my ($self, $table, $fk, $ref, $pk) = @_;
 
-    $pk ||= $self->keys->{$ref}[0];
+    $pk ||= $self->_table_keys->{$ref}[0];
 
     $self->add_link( $table, $fk, $ref, $pk );
     $self->add_link( $ref, $pk, $table, $fk );
@@ -272,7 +259,7 @@ sub add_field_replace {
     my ($self, $table, $field, $rex, $replace) = @_;
 
     $self->croak ("Attempt to add field replacement for nonexistent table $table")
-        unless $self->keys->{$table};
+        unless $self->_table_keys->{$table};
 
     $rex = qr($rex);
 
@@ -302,7 +289,7 @@ sub add_pre_insert_sql {
     $sql =~ /;\s*(?:--[^\n]*)?\n*$/
         or croak "SQL must end in a semicolon(;) and optionally a comment";
 
-    push @{ $self->pre_insert_sql }, $sql;
+    push @{ $self->_pre_insert_sql }, $sql;
 };
 
 =head3 add_post_insert_sql
@@ -324,7 +311,7 @@ sub add_post_insert_sql {
     $sql =~ /;\s*(?:--[^\n]*)?\n*$/
         or croak "SQL must end in a semicolon(;) and optionally a comment";
 
-    push @{ $self->post_insert_sql }, $sql;
+    push @{ $self->_post_insert_sql }, $sql;
 };
 
 =head3 read_config( $file_handle )
@@ -579,7 +566,7 @@ Create a key (stringified in the same way) based on a known table and some value
 sub make_primary_key {
     my ($self, $table, $data) = @_;
 
-    my $keys = $self->keys->{$table};
+    my $keys = $self->_table_keys->{$table};
 
     return ( $self->joinf( @$keys ), $self->joinf( map { $data->{$_} } @$keys ) );
 };
@@ -623,7 +610,7 @@ sub get_linked {
     my ($self, $table, $data) = @_;
 
     my @ret;
-    my $links = $self->links->{$table};
+    my $links = $self->_table_links->{$table};
     foreach my $field (sort keys %$links) {
         next unless defined $data->{$field};
         foreach my $pair (sort keys %{ $links->{$field} } ) {
@@ -645,7 +632,7 @@ Remove cache.
 
 sub clear {
     my $self = shift;
-    $self->data({});
+    $self->_table_cache({});
     $self->seen({});
     return $self;
 };
@@ -692,7 +679,7 @@ sub add_data {
 
     my (undef, $key) = $self->make_primary_key( $table, $data );
 
-    $self->data->{$table}{$key} = $data;
+    $self->_table_cache->{$table}{$key} = $data;
     return $self;
 };
 
@@ -708,12 +695,12 @@ sub get_insert_script {
 
     # TODO %opt unused
 
-    my $all = $self->data;
+    my $all = $self->_table_cache;
 
     my @work;
 
     push @work, "BEGIN;";
-    push @work, @{ $self->pre_insert_sql };
+    push @work, @{ $self->_pre_insert_sql };
     foreach my $table( keys %$all ) {
         my $entries = $all->{$table};
         foreach my $item (values %$entries) {
@@ -724,7 +711,7 @@ sub get_insert_script {
                 $table, (join ", ", @esc_keys), (join ", ", @values);
         };
     };
-    push @work, @{ $self->post_insert_sql };
+    push @work, @{ $self->_post_insert_sql };
     push @work, "COMMIT;";
     return join "\n", @work, '';
 };
@@ -832,7 +819,7 @@ sub insert {
     my ($self) = @_;
 
     $self->_rw_check;
-    my $data = $self->data;
+    my $data = $self->_table_cache;
 
     my @todo;
     foreach my $table( keys %$data ) {
@@ -843,12 +830,12 @@ sub insert {
 
     $self->dbh->begin_work;
     $self->dbh->do($_)
-        for @{ $self->pre_insert_sql };
+        for @{ $self->_pre_insert_sql };
     foreach (@todo) {
         $self->insert_one( @$_ );
     };
     $self->dbh->do($_)
-        for @{ $self->post_insert_sql };
+        for @{ $self->_post_insert_sql };
     $self->dbh->commit;
 
 };
@@ -882,7 +869,7 @@ sub _rw_check {
     my $self = shift;
 
     croak "read-write operation requested in read-only mode, set rw=>1 on connect"
-        unless $self->dbh_allow_write;
+        unless $self->_dbh_allow_write;
 
     $self;
 };

@@ -54,12 +54,12 @@ link relation.manager_id manager
 CONF
 } "normal config";
 
-is_deeply_diff $slice->keys,
+is_deeply_diff $slice->_table_keys,
     { customer => [ "id" ], manager => [ "id" ], relation => [ "customer_id", "manager_id" ] },
     10,
     "keys imported correctly";
 
-note explain $slice->links;
+note explain $slice->_table_links;
 
 throws_ok {
     $slice->read_config (make_fd(<<'CONF'));

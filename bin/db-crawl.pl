@@ -61,7 +61,7 @@ sub arg_to_table {
     my $spec  = $2;
 
     die "Unknown table '$table' requested by '$arg'\n"
-        unless $crawl->keys->{$table};
+        unless $crawl->_table_keys->{$table};
 
     # TODO detect duplicates & die
     my %hash;
