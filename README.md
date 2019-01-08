@@ -14,7 +14,7 @@ These links may or may not correspond to foreign keys in the database.
 
 * `bin/db-crawl.pl` - a program to fetch database content via a config file
 
-* `examples` - example configuration files & SQLite-based db schemas
+* `example` - example configuration files & SQLite-based db schemas
 
 * `lib` - modules
 
@@ -36,9 +36,9 @@ and a configuration file.
 
 See `perldoc bin/db-crawl.pl` for detailed configuration file format.
 
-See [this example](examples/artist.conf) for what it looks like.
+See [this example](example/artist.conf) for what it looks like.
 
-See [examples readme](examples/README.md) for how to use it.
+See [examples readme](example/README.md) for how to use it.
 
 # SUPPORT AND DOCUMENTATION
 
