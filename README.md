@@ -1,18 +1,24 @@
-DBIx-Crawl
+# NAME
 
-The README is used to introduce the module and provide instructions on
-how to install the module, any machine dependencies it may have (for
-example C compilers and installed libraries) and any other information
-that should be provided before the module is installed.
+DBIx::Crawl - fetch partial database content using predefined links.
 
-A README file is required for CPAN modules since CPAN extracts the README
-file from a module distribution so that people browsing the archive
-can use it to get an idea of the module's uses. It is usually a good idea
-to provide version information here so that people can decide whether
-fixes for the module are worth downloading.
+# DESCRIPTION
 
+The `DBIx::Crawl` module as well as its command-line interface `db-crawl.pl`
+allows to define _links_ between database tables and fetch partial content
+starting from certain rows.
 
-INSTALLATION
+These links may or may not correspond to foreign keys in the database.
+
+# CONTENT OF THIS PACKAGE
+
+* `bin/db-crawl.pl` - a program to fetch database content via a config file
+
+* `lib` - modules
+
+* `t` - tests
+
+# INSTALLATION
 
 To install this module, run the following commands:
 
@@ -21,7 +27,14 @@ To install this module, run the following commands:
 	make test
 	make install
 
-SUPPORT AND DOCUMENTATION
+To proceed without installation, just use `bin/db-crawl.pl`
+and a configuration file.
+
+# CONFIGURATION
+
+See `perldoc bin/db-crawl.pl` for configuration file format.
+
+# SUPPORT AND DOCUMENTATION
 
 After installing, you can find documentation for this module with the
 perldoc command.
@@ -43,9 +56,9 @@ You can also look for information at:
         http://search.cpan.org/dist/DBIx-Crawl/
 
 
-LICENSE AND COPYRIGHT
+# LICENSE AND COPYRIGHT
 
-Copyright (C) 2018 Konstantin S. Uvarin
+Copyright (C) 2018-2019 Konstantin S. Uvarin
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a
