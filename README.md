@@ -14,6 +14,8 @@ These links may or may not correspond to foreign keys in the database.
 
 * `bin/db-crawl.pl` - a program to fetch database content via a config file
 
+* `examples` - example configuration files & SQLite-based db schemas
+
 * `lib` - modules
 
 * `t` - tests
@@ -34,24 +36,9 @@ and a configuration file.
 
 See `perldoc bin/db-crawl.pl` for detailed configuration file format.
 
-* empty lines and lines starting with a `#` are ignored;
+See [this example](examples/artist.conf) for what it looks like.
 
-* each meaningful line must start with a **command**,
-followed by zero or more **arguments**;
-
-* argument must be a bare word, a string in double quotes, or a here-doc
-starting with `<<LABEL` and ending with a string containing that label only.
-
-    # First, define some tables
-    table artist id
-    table album id
-
-    # This table only has a composite key, but we'll handle that, too
-    table song album_id track_number
-
-    # now interlink the tables. 
-    link album.artist_id 
-
+See [examples readme](examples/README.md) for how to use it.
 
 # SUPPORT AND DOCUMENTATION
 
