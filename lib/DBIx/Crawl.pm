@@ -154,7 +154,9 @@ my %command_spec = (
     connect => {
         method => sub {
             my ($self, $field, $value) = @_;
-            $self->connect_info->{$field} = $value
+            die "Storing password in configuration is not allowed"
+                if $field eq 'pass';
+            $self->connect_info->{$field} = $value;
         },
         min    => 2,
         max    => 2,

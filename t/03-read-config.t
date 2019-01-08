@@ -85,6 +85,10 @@ is ref $slice->_post_fetch_hooks->{customer}, 'CODE', "A sub was inserted";
 
 note explain $slice->_post_fetch_hooks;
 
+throws_ok {
+    DBIx::Crawl->new->read_config(\"connect pass secret");
+} qr/password.*configuration/, "passwords not allowed in config";
+
 done_testing;
 
 sub make_fd {

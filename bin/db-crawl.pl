@@ -192,6 +192,10 @@ each with a link to corresponding method in L<DBIx::Crawl>.
 
 Specify how database connection is made.
 
+As an exception, the C<pass> attribute is prohibited.
+This is done so because a configuration file is likely to be shared,
+and the password better be shared through a separate channel.
+
 See C<connect> and C<connect_info> attribute.
 
 =head3 on_connect C<perl-code>
@@ -270,6 +274,7 @@ See C<add_post_insert_sql>.
     connect driver  mysql
     connect host    database.mycompany.com
     connect user    readonly
+    # 'connect pass' is not allowed in config!
 
     # Some last-moment amendment
     on_connect <<PERL
