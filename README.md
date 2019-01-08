@@ -32,7 +32,26 @@ and a configuration file.
 
 # CONFIGURATION
 
-See `perldoc bin/db-crawl.pl` for configuration file format.
+See `perldoc bin/db-crawl.pl` for detailed configuration file format.
+
+* empty lines and lines starting with a `#` are ignored;
+
+* each meaningful line must start with a **command**,
+followed by zero or more **arguments**;
+
+* argument must be a bare word, a string in double quotes, or a here-doc
+starting with `<<LABEL` and ending with a string containing that label only.
+
+    # First, define some tables
+    table artist id
+    table album id
+
+    # This table only has a composite key, but we'll handle that, too
+    table song album_id track_number
+
+    # now interlink the tables. 
+    link album.artist_id 
+
 
 # SUPPORT AND DOCUMENTATION
 
@@ -43,18 +62,7 @@ perldoc command.
 
 You can also look for information at:
 
-    RT, CPAN's request tracker (report bugs here)
-        http://rt.cpan.org/NoAuth/Bugs.html?Dist=DBIx-Crawl
-
-    AnnoCPAN, Annotated CPAN documentation
-        http://annocpan.org/dist/DBIx-Crawl
-
-    CPAN Ratings
-        http://cpanratings.perl.org/d/DBIx-Crawl
-
-    Search CPAN
-        http://search.cpan.org/dist/DBIx-Crawl/
-
+*   [github](https://github.com/dallaylaen/dbix-crawl)
 
 # LICENSE AND COPYRIGHT
 
