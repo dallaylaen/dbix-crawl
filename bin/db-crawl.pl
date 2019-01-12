@@ -47,6 +47,14 @@ if (!@todo) {
 $conn{dbi} = "SQLite:dbname=$conn{dbi}"
     if defined $conn{dbi} and $conn{dbi} !~ /:/;
 
+defined $conn{user} and $conn{pass} //= do {
+    print STDERR "Password for user $conn{user}: \n";
+    # TODO terminal echo off
+    local $_ = <STDIN>;
+    defined $_ or die "Failed to read password: $!";
+    $_;
+};
+
 # fetch!
 $slice->connect( %conn );
 $slice->fetch( @todo );
