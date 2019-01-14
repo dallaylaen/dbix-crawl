@@ -31,6 +31,7 @@ die "--config is required"
 # read config
 my $fd = openfile( $opt{config} );
 my $slice = DBIx::Crawl->new( unsafe => 1 );
+$slice->connect_info( \%conn );
 $slice->read_config($fd);
 
 # convert leftover args to Crawl's format
@@ -47,11 +48,14 @@ if (!@todo) {
 $conn{dbi} = "SQLite:dbname=$conn{dbi}"
     if defined $conn{dbi} and $conn{dbi} !~ /:/;
 
+# ask for password if user is specified
+$conn{user} //= $slice->connect_info->{user};
 defined $conn{user} and $conn{pass} //= do {
     print STDERR "Password for user $conn{user}: \n";
     # TODO terminal echo off
     local $_ = <STDIN>;
     defined $_ or die "Failed to read password: $!";
+    chomp $_;
     $_;
 };
 
